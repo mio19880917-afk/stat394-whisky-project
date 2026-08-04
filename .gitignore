@@ -47,3 +47,8 @@ po/*~
 
 # RStudio Connect folder
 rsconnect/
+
+
+## unneeded Quarto .html and output stuff for me (chloe)
+chloe/Report_files/
+chloe/Report.html

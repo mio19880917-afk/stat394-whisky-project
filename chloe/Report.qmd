@@ -1,0 +1,56 @@
+---
+title: "Multivariate Analysis of Scotch Whisky Components"
+format: html
+editor: visual
+---
+
+To Cover:
+• A high-level description of the study and its motivation.
+• A quantitative descriptive analysis of the data.
+• A graphical/qualitative analysis of the data.
+• Can you assume that the data follow a multivariate normal distribution?
+• Are there “surprising” observations?
+You must try to answer the question (with a proper discussion):
+• Is the cluster analysis consistent with different distances and linkages?
+
+## A Qualitative Analysis of Data
+
+```{r}
+#| label: load-packages
+#| include: false
+
+library(tidyverse)
+library(ggplot2)
+library(ggcorrplot)
+```
+
+Prepping data:
+
+```{r}
+whiskey.data <- read.csv("../whisky_trace_elements.csv", header=TRUE)
+
+## handling it pretty poorly rn - need to research how it's properly done
+whiskey.data$P <- as.double(gsub("<","",whiskey.data$P))
+whiskey.data$Cl <- as.double(gsub("<","",whiskey.data$Cl))
+whiskey.data$Br <- as.double(gsub("<","",whiskey.data$Br))
+whiskey.data$Rb <- as.double(gsub("<","",whiskey.data$Rb))
+
+whiskey.data$Descriptor <- as.factor(whiskey.data$Descriptor)
+whiskey.data$Distillery <- as.factor(whiskey.data$Distillery)
+whiskey.data <- as.data.frame(whiskey.data)
+head(whiskey.data)
+```
+Plotting:
+```{r}
+ggcorrplot(cor(whiskey.data[,-(1:3)]),
+  method = "circle",
+  hc.order = TRUE,
+  type = "lower")
+```
+
+**Want to check next for:**
+- Look at how it differs if  filtering for specific descriptors.
+- Outliers? (or odd looking measurements)
+- proper understanding of how to deal with those '<xyz' measurements
+
+
