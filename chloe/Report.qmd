@@ -18,13 +18,14 @@ You must try to answer the question (with a proper discussion):
 ```{r}
 #| label: load-packages
 #| include: false
-
+  
 library(tidyverse)
 library(ggplot2)
 library(ggcorrplot)
+library(gridExtra)
 ```
 
-Prepping data:
+### Prepping data:
 
 ```{r}
 whiskey.data <- read.csv("../whisky_trace_elements.csv", header=TRUE)
@@ -35,22 +36,53 @@ whiskey.data$Cl <- as.double(gsub("<","",whiskey.data$Cl))
 whiskey.data$Br <- as.double(gsub("<","",whiskey.data$Br))
 whiskey.data$Rb <- as.double(gsub("<","",whiskey.data$Rb))
 
+whiskey.data <- whiskey.data[, -1] # drop the sample no - technically implicitely exists cause indexing
+
 whiskey.data$Descriptor <- as.factor(whiskey.data$Descriptor)
 whiskey.data$Distillery <- as.factor(whiskey.data$Distillery)
 whiskey.data <- as.data.frame(whiskey.data)
-head(whiskey.data)
 ```
-Plotting:
+
+
 ```{r}
-ggcorrplot(cor(whiskey.data[,-(1:3)]),
-  method = "circle",
-  hc.order = TRUE,
-  type = "lower")
+summary(whiskey.data[,-(1:2)])
 ```
+Notes about data:
+- All values are above 0
+- They aren't all in the same order of magnitude range, .e.g, Br is smaller than P.
+
+### Plotting:
+
+```{r}
+# function for getting plots, so that I don't have to rewrite it :)
+get.ggcorrplot <- function(data, title){
+  plot <- ggcorrplot(data,
+    method = "circle",
+    hc.order = TRUE,
+    type = "lower",
+    title = title
+    )
+  plot
+}
+```
+
+```{r}
+get.ggcorrplot(cor(whiskey.data[,-(1:2)]), "Correlation Across all Classes")
+```
+
+```{r}
+counterfit.corrplot <- get.ggcorrplot(cor(subset(whiskey.data, Descriptor=="Counterfeit")[,-(1:2)]), "Correlation for Counterfeit Whiskey")
+
+non.counterfit.corrplot <- get.ggcorrplot(cor(subset(whiskey.data, Descriptor!="Counterfeit")[,-(1:2)]), "Correlation for Non-Counterfeit Whiskey")
+
+grid.arrange(counterfit.corrplot, non.counterfit.corrplot, ncol=2)
+```
+There's a clear indicator for some difference with a lot more negative correlations for the counterfeit whiskeys compared to the others.
 
 **Want to check next for:**
 - Look at how it differs if  filtering for specific descriptors.
 - Outliers? (or odd looking measurements)
 - proper understanding of how to deal with those '<xyz' measurements
+- have ggcorrplot maintain label ordering for easier comparing...
 
 
