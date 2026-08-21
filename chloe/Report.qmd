@@ -24,6 +24,7 @@ library(ggplot2)
 library(ggcorrplot)
 library(gridExtra)
 library(reshape2)
+library(dplyr)
 ```
 
 ### Prepping data:
@@ -167,3 +168,42 @@ ggplot(data.frame(dM), aes(x=dM)) +
 ```
 
 ### PCA
+
+```{r}
+whiskey.stand <- whiskey.num |> mutate_all(~(scale(.) %>% as.vector))
+
+ggplot(whiskey.stand, aes(x=Zn)) +
+  geom_histogram(bins=30, fill="white", col="black")
+
+summary(whiskey.stand)
+
+
+
+Sigma <- cov(whiskey.stand)
+pca <- as.matrix(whiskey.stand) %*% eigen(Sigma)$vectors
+```
+
+```{r}
+pca <- as.data.frame(pca)
+pca$Descriptor <- whiskey.data$Descriptor
+summary(pca)
+
+ggplot(pca, aes(x=V1,y=V2, color=factor(Descriptor)))+
+  geom_point(size=1)
+```
+
+```{r}
+whiskey.stand$Descriptor <- whiskey.data$Descriptor
+whiskey.stand.melt <- melt(whiskey.stand, 
+                           id.vars="Descriptor", 
+                           variable.name = "Element")
+whiskey.stand.melt
+
+ggplot(whiskey.stand.melt, aes(x=value))+
+  geom_histogram(bins=nclass.FD(whiskey.stand.melt$value))+
+  geom_rug()
+```
+
+
+
+
