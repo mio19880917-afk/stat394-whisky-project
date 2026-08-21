@@ -46,6 +46,7 @@ whiskey.data <- as.data.frame(whiskey.data)
 
 
 ```{r}
+whiskey.num <- whiskey.data[,-(1:2)] #dropping factors 
 summary(whiskey.data[,-(1:2)])
 ```
 Notes about data:
@@ -116,7 +117,6 @@ ggplot(data=subsect.3.melt, aes(x=Element, y=value)) +
   theme(axis.text.x = element_text(size=7, angle=90, hjust=1),
   legend.position = "none")
 ```
-```
 
 ```{r}
 get.ggcorrplot(cor(whiskey.data[,-(1:2)]), "Correlation Across all Classes")
@@ -129,6 +129,7 @@ non.counterfit.corrplot <- get.ggcorrplot(cor(subset(whiskey.data, Descriptor!="
 
 grid.arrange(counterfit.corrplot, non.counterfit.corrplot, ncol=2)
 ```
+
 There's a clear indicator for some difference with a lot more negative correlations for the counterfeit whiskeys compared to the others.
 
 **Want to check next for:**
@@ -137,4 +138,32 @@ There's a clear indicator for some difference with a lot more negative correlati
 - proper understanding of how to deal with those '<xyz' measurements
 - have ggcorrplot maintain label ordering for easier comparing...
 
+### Mahalanobis:
 
+```{r}
+cov(whiskey.num)
+```
+
+```{r}
+p <- 11
+dM <- mahalanobis(whiskey.num, center=colMeans(whiskey.num), cov=cov(whiskey.num))
+
+upper.quantiles <- qchisq(c(.9, .95, .99), df=p)
+density.at.quantiles <- dchisq(x=upper.quantiles, df=p)
+cut.points <- data.frame(upper.quantiles, density.at.quantiles)
+
+ggplot(data.frame(dM), aes(x=dM)) +
+	geom_histogram(aes(y=after_stat(density)), bins=8,
+				   fill="white", col="black") +
+	geom_rug() +
+	stat_function(fun=dchisq, args = list(df=p),
+				  col="red", size=2, alpha=.7, xlim=c(-5,40)) +
+	geom_segment(data=cut.points,
+				 aes(x=upper.quantiles, xend=upper.quantiles,
+					 y=rep(0,3), yend=density.at.quantiles),
+				 col="blue", size=2) +
+	xlab("Mahalanobis distances and cut points") +
+	ylab("Histogram and density")
+```
+
+### PCA
