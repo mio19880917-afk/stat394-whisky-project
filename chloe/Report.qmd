@@ -162,11 +162,12 @@ ggplot(data.frame(dM), aes(x=dM)) +
 ```{r}
 whiskey.stand <- whiskey.num |> mutate_all(~(scale(.) %>% as.vector))
 
-ggplot(whiskey.stand, aes(x=Zn)) +
-  geom_histogram(bins=30, fill="white", col="black")
+#ggplot(whiskey.stand, aes(x=Zn)) +
+#  geom_histogram(bins=30, fill="white", col="black")
 
-summary(whiskey.stand)
+#summary(whiskey.stand)
 
+eigen(Sigma)
 
 
 Sigma <- cov(whiskey.stand)
@@ -194,6 +195,10 @@ ggplot(whiskey.stand.melt, aes(x=value))+
   geom_rug()
 ```
 
+Looks closer to a poison or chi squared?
+
+## Normal Assumptions
+
 ```{r}
 plot_norm_est <- function(data, parameter, t) {
   ggplot(data) +
@@ -215,3 +220,31 @@ plot_norm_est(whiskey.stand, whiskey.stand$Br, "Br")
 plot_norm_est(whiskey.stand, whiskey.stand$Rb, "Rb")
 
 ```
+
+Hardly any of these look normal
+
+```{r}
+plot.qq <- function(data, parameter, title) {
+  ggplot(data, aes(sample=parameter)) +
+    stat_qq(mapping = aes(colour = Descriptor)) + stat_qq_line()+
+    ggtitle(paste("Normal QQ Plot for", title, sep=" "))
+}
+plot.qq(whiskey.stand, whiskey.stand$P, "P")
+plot.qq(whiskey.stand, whiskey.stand$S, "S")
+plot.qq(whiskey.stand, whiskey.stand$Cl, "Cl")
+plot.qq(whiskey.stand, whiskey.stand$K, "K")
+plot.qq(whiskey.stand, whiskey.stand$Ca, "Ca")
+plot.qq(whiskey.stand, whiskey.stand$Mn, "Mn")
+plot.qq(whiskey.stand, whiskey.stand$Fe, "Fe")
+plot.qq(whiskey.stand, whiskey.stand$Cu, "Cu")
+plot.qq(whiskey.stand, whiskey.stand$Zn, "Zn")
+plot.qq(whiskey.stand, whiskey.stand$Br, "Br")
+plot.qq(whiskey.stand, whiskey.stand$Rb, "Rb")
+
+```
+
+Again, all of these look skewed to the right. Fe looks the closest
+
+Interestingly you can make out the counterfeits seem to be the strange observations in S.
+
+
