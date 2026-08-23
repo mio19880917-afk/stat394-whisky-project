@@ -4,7 +4,12 @@ format: html
 editor: visual
 ---
 
-To Cover: • A high-level description of the study and its motivation. • A quantitative descriptive analysis of the data. • A graphical/qualitative analysis of the data. • Can you assume that the data follow a multivariate normal distribution? • Are there “surprising” observations? You must try to answer the question (with a proper discussion): • Is the cluster analysis consistent with different distances and linkages?
+To Cover: 
+- A high-level description of the study and its motivation. 
+- A quantitative descriptive analysis of the data.
+- A graphical/qualitative analysis of the data. 
+- Can you assume that the data follow a multivariate normal distribution? - no
+- Are there “surprising” observations? You must try to answer the question (with a proper discussion): Is the cluster analysis consistent with different distances and linkages?
 
 ## A Qualitative Analysis of Data
 
@@ -167,10 +172,10 @@ whiskey.stand <- whiskey.num |> mutate_all(~(scale(.) %>% as.vector))
 
 #summary(whiskey.stand)
 
+
+
+(Sigma <- cov(whiskey.stand))
 eigen(Sigma)
-
-
-Sigma <- cov(whiskey.stand)
 pca <- as.matrix(whiskey.stand) %*% eigen(Sigma)$vectors
 ```
 
