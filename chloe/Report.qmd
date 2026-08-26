@@ -30,17 +30,30 @@ library(dplyr)
 ```{r}
 whiskey.data <- read.csv("../whisky_trace_elements.csv", header=TRUE)
 
-## handling it pretty poorly rn - need to research how it's properly done
-whiskey.data$P <- as.double(gsub("<","",whiskey.data$P))
-whiskey.data$Cl <- as.double(gsub("<","",whiskey.data$Cl))
-whiskey.data$Br <- as.double(gsub("<","",whiskey.data$Br))
-whiskey.data$Rb <- as.double(gsub("<","",whiskey.data$Rb))
+handle_lod <- function(column) {
+  for (i in 1:length(column)) {
+    val = column[i]
+    if (grepl('<', val)) {
+      new_val = as.double(sub("<","",val)) / 2.
+      column[i] = new_val
+    }
+    column[i] = as.double(column[i])
+  }
+  return(column)
+}
+
+## handling lod's like the paper does
+whiskey.data$P <- as.double(handle_lod(whiskey.data$P))
+whiskey.data$Cl <- as.double(handle_lod(whiskey.data$Cl))
+whiskey.data$Br <- as.double(handle_lod(whiskey.data$Br))
+whiskey.data$Rb <- as.double(handle_lod(whiskey.data$Rb))
 
 whiskey.data <- whiskey.data[, -1] # drop the sample no - technically implicitely exists cause indexing
 
 whiskey.data$Descriptor <- as.factor(whiskey.data$Descriptor)
 whiskey.data$Distillery <- as.factor(whiskey.data$Distillery)
 whiskey.data <- as.data.frame(whiskey.data)
+
 ```
 
 ```{r}
@@ -142,7 +155,7 @@ cov(whiskey.num)
 
 ```{r}
 p <- 11
-dM <- mahalanobis(whiskey.num, center=colMeans(whiskey.num), cov=cov(whiskey.num))
+dM <- mahalanobis(whiskey.data[-(1:2)], center=colMeans(whiskey.data[-(1:2)]), cov=cov(whiskey.data[-(1:2)]))
 
 upper.quantiles <- qchisq(c(.9, .95, .99), df=p)
 density.at.quantiles <- dchisq(x=upper.quantiles, df=p)
@@ -165,7 +178,8 @@ ggplot(data.frame(dM), aes(x=dM)) +
 ### PCA
 
 ```{r}
-whiskey.stand <- whiskey.num |> mutate_all(~(scale(.) %>% as.vector))
+whiskey.log <- whiskey.data |> mutate(across(where(is.numeric), log))
+whiskey.stand <- whiskey.log |> mutate(across(where(is.numeric), ~(scale(.) %>% as.vector)))
 
 #ggplot(whiskey.stand, aes(x=Zn)) +
 #  geom_histogram(bins=30, fill="white", col="black")
@@ -174,9 +188,9 @@ whiskey.stand <- whiskey.num |> mutate_all(~(scale(.) %>% as.vector))
 
 
 
-(Sigma <- cov(whiskey.stand))
+(Sigma <- cov(whiskey.stand[3:13]))
 eigen(Sigma)
-pca <- as.matrix(whiskey.stand) %*% eigen(Sigma)$vectors
+pca <- as.matrix(whiskey.stand[3:13]) %*% eigen(Sigma)$vectors
 ```
 
 ```{r}
@@ -189,15 +203,15 @@ ggplot(pca, aes(x=V1,y=V2, color=factor(Descriptor)))+
 ```
 
 ```{r}
-whiskey.stand$Descriptor <- whiskey.data$Descriptor
-whiskey.stand.melt <- melt(whiskey.stand, 
-                           id.vars="Descriptor", 
-                           variable.name = "Element")
-whiskey.stand.melt
+#whiskey.stand$Descriptor <- whiskey.data$Descriptor
+#whiskey.stand.melt <- melt(whiskey.stand, 
+#                           id.vars="Descriptor", 
+#                           variable.name = "Element")
+#whiskey.stand.melt
 
-ggplot(whiskey.stand.melt, aes(x=value))+
-  geom_histogram(bins=nclass.FD(whiskey.stand.melt$value))+
-  geom_rug()
+#ggplot(whiskey.stand.melt, aes(x=value))+
+#  geom_histogram(bins=nclass.FD(whiskey.stand.melt$value))+
+#  geom_rug()
 ```
 
 Looks closer to a poison or chi squared?
@@ -252,4 +266,20 @@ Again, all of these look skewed to the right. Fe looks the closest
 
 Interestingly you can make out the counterfeits seem to be the strange observations in S.
 
+
+## New Conclusion About normality
+
+After actually reading the paper they mention log transforming the data. Doing that makes the distributions look normal T-T lol
+PCA also looks like what they got
+
+## Classifiying by distance 
+
+```{r}
+p <- 11
+whiskey.log.counter <- whiskey.log |> filter(Descriptor == "Counterfeit")
+whiskey.log.no.counter <- whiskey.log |> filter(Descriptor != "Counterfeit")
+
+dM.counter <- mahalanobis(whiskey.log.counter[-(1:2)], center=colMeans(whiskey.log.counter[-(1:2)]), cov=cov(whiskey.log.counter[-(1:2)]))
+dM.non.counter <- mahalanobis(whiskey.log.no.counter[-(1:2)], center=colMeans(whiskey.log.no.counter[-(1:2)]), cov=cov(whiskey.log.no.counter[-(1:2)]))
+```
 
