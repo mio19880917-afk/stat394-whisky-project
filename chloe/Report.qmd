@@ -275,11 +275,46 @@ PCA also looks like what they got
 ## Classifiying by distance 
 
 ```{r}
+library(dplyr)
 p <- 11
 whiskey.log.counter <- whiskey.log |> filter(Descriptor == "Counterfeit")
 whiskey.log.no.counter <- whiskey.log |> filter(Descriptor != "Counterfeit")
-
-dM.counter <- mahalanobis(whiskey.log.counter[-(1:2)], center=colMeans(whiskey.log.counter[-(1:2)]), cov=cov(whiskey.log.counter[-(1:2)]))
-dM.non.counter <- mahalanobis(whiskey.log.no.counter[-(1:2)], center=colMeans(whiskey.log.no.counter[-(1:2)]), cov=cov(whiskey.log.no.counter[-(1:2)]))
+qr(whiskey.log.counter[-(1:2)])$rank
+#dM.counter <- mahalanobis(whiskey.log.counter[-(1:2)], center=colMeans(whiskey.log.counter[-(1:2)]), cov=cov(whiskey.log.counter[-(1:2)]))
+#dM.non.counter <- mahalanobis(whiskey.log.no.counter[-(1:2)], center=colMeans(whiskey.log.no.counter[-(1:2)]), cov=cov(whiskey.log.no.counter[-(1:2)]))
 ```
+
+Can't call the above code because counter has less observation than parameters, so trying with first 2 pca components
+```{r}
+pca.counter <- pca |> filter(Descriptor == "Counterfeit")
+pca.no.counter <- pca |> filter(Descriptor != "Counterfeit")
+
+X1 <- pca.counter[(1:2)]
+X2 <- pca.no.counter[(1:2)]
+p <- 2
+
+dM.counter <- mahalanobis(X1, center=colMeans(X1), cov=cov(X1))
+dM.non.counter <- mahalanobis(X1, center=colMeans(X2), cov=cov(X2))
+```
+
+Comparing counterfeit observations to models
+
+```{r}
+pchisq(dM.counter, df=p, lower.tail=FALSE)
+pchisq(dM.non.counter, df=p, lower.tail=FALSE)
+```
+All counterfeit observations are closer to a a multivariate normal with just counterfeits compared to multivariate normal without counterfeit obsevations.
+
+```{r}
+dM.counter <- mahalanobis(X2, center=colMeans(X1), cov=cov(X1))
+dM.non.counter <- mahalanobis(X2, center=colMeans(X2), cov=cov(X2))
+counter <- pchisq(dM.counter, df=p, lower.tail=FALSE)
+non.counter <- pchisq(dM.non.counter, df=p, lower.tail=FALSE)
+data.frame(counter, non.counter, non.counter > counter)
+```
+
+All non-counterfeit ones get correctly classified by distance
+
+TODO NEXT:
+- drop the value i'm test....
 
