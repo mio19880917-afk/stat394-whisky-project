@@ -1,66 +1,28 @@
 ---
 title: "Multivariate Analysis of Scotch Whisky Components"
-format: html
-editor: source
+format: pdf
+editor: visual
 ---
+
+To Cover: - A high-level description of the study and its motivation. - A quantitative descriptive analysis of the data. - A graphical/qualitative analysis of the data. - Can you assume that the data follow a multivariate normal distribution? - no - Are there “surprising” observations? You must try to answer the question (with a proper discussion): Is the cluster analysis consistent with different distances and linkages?
+
+## A Qualitative Analysis of Data
 
 ```{r}
 #| label: load-packages
 #| include: false
-## Setup  
+  
 library(tidyverse)
 library(ggplot2)
 library(ggcorrplot)
 library(gridExtra)
 library(reshape2)
 library(dplyr)
-library(pander)
 ```
 
-To Cover: - A high-level description of the study and its motivation. - A quantitative descriptive analysis of the data. - A graphical/qualitative analysis of the data. - Can you assume that the data follow a multivariate normal distribution? - no - Are there “surprising” observations? You must try to answer the question (with a proper discussion): Is the cluster analysis consistent with different distances and linkages?
-
-
-## Abstract
-
-## Introduction
-
-## Data
-
-The data contains contains 32 observations across:
-- Counterfeit
-- Blend
-- Grain
-- Highland
-- Lowland
-- Speyside
-
-With trace elements for, (P, S, Cl, K, Ca, Mn, Fe, Cu, Zn, Br and Rb), measured  in mg/L.
-
-12 out of the 32 observations have at least one of the trace elements detected below LOD.
-All the counterfeit whiskey observations also have at least one variables below LOD
-
-Amount of observations below LOD by individual element:
-```{r}
-#| echo: false
-
-whiskey.data <- read.csv("../whisky_trace_elements.csv", header=TRUE)
-whiskey.data <- as.data.frame(whiskey.data)
-
-pander((whiskey.data |>
-  summarise(
-    across(everything(), ~ sum(startsWith(as.character(.), "<"), na.rm = TRUE))
-  ))[-(1:3)])
-```
-
-### Transformations on Data
-#### Handling the LOD values
-
-If we were to drop observations with trace elements that were measured below LOD, we'd lose more than a third of the dataset, including all counterfeit observations, because of this they will instead be substitued.
-
-The two common ways of substituting LOD values are, $LOD/2$ and $LOD/\sqrt{2}$. Similar to the paper that this data is from, this report will be subtituing all LOD values with $LOD/2$.
+### Prepping data:
 
 ```{r}
-#| echo: false
 whiskey.data <- read.csv("../whisky_trace_elements.csv", header=TRUE)
 
 handle_lod <- function(column) {
@@ -81,51 +43,22 @@ whiskey.data$Cl <- as.double(handle_lod(whiskey.data$Cl))
 whiskey.data$Br <- as.double(handle_lod(whiskey.data$Br))
 whiskey.data$Rb <- as.double(handle_lod(whiskey.data$Rb))
 
-whiskey.data <- whiskey.data[, -1] 
+whiskey.data <- whiskey.data[, -1] # drop the sample no - technically implicitely exists cause indexing
 
 whiskey.data$Descriptor <- as.factor(whiskey.data$Descriptor)
 whiskey.data$Distillery <- as.factor(whiskey.data$Distillery)
 whiskey.data <- as.data.frame(whiskey.data)
 
-whiskey.num <- whiskey.data[,-(1:3)] #dropping factors + sample number 
-summary(whiskey.data[,-(1:3)])
 ```
 
-From the summary we can see all values are above 0, but they aren't all in the same magnitured of range. E.g., Br is a lot smaller than P.
-
-#### Log Transform on the data
-
-Lastly, looking at (standardized) histogram of all the variables, we can see it looks rather skew,
 ```{r}
-whiskey.stand <- whiskey.data |> 
-  mutate(across(where(is.numeric), ~(scale(.) %>% as.vector)))
-whiskey.stand$Descriptor <- whiskey.data$Descriptor
-whiskey.stand.melt <- melt(whiskey.stand[-2], 
-                           id.vars="Descriptor", 
-                           variable.name = "Element")
-
-ggplot(whiskey.stand.melt, aes(x=value))+
-  geom_histogram(bins=nclass.FD(whiskey.stand.melt$value))+
-  geom_rug() + 
-  ggtitle("standardized histogram of trace elements")
-```
-After applying a log transform, the data looks a lot closer to a normal distribution.
-```{r}
-whiskey.stand <- whiskey.data |> 
-  mutate(across(where(is.numeric), log)) |>
-  mutate(across(where(is.numeric), ~(scale(.) %>% as.vector))) 
-whiskey.stand.melt <- melt(whiskey.stand[-2], 
-                           id.vars="Descriptor", 
-                           variable.name = "Element")
-
-ggplot(whiskey.stand.melt, aes(x=value))+
-  geom_histogram(aes(y = ..density..), bins=nclass.FD(whiskey.stand.melt$value))+
-  stat_function(fun = dnorm, args = list(mean=0, sd=1), color="red") +
-  geom_rug() +
-  ggtitle("log transformed standardized histogram of trace elements")
+whiskey.num <- whiskey.data[,-(1:2)] #dropping factors 
+summary(whiskey.data[,-(1:2)])
 ```
 
-## A Qualitative Analysis of Data
+Notes about data: - All values are above 0 - They aren't all in the same order of magnitude range, .e.g, Br is smaller than P.
+
+### Plotting:
 
 ```{r}
 # function for getting plots, so that I don't have to rewrite it :)
@@ -264,7 +197,17 @@ ggplot(pca, aes(x=V1,y=V2, color=factor(Descriptor)))+
   geom_point(size=1)
 ```
 
+```{r}
+#whiskey.stand$Descriptor <- whiskey.data$Descriptor
+#whiskey.stand.melt <- melt(whiskey.stand, 
+#                           id.vars="Descriptor", 
+#                           variable.name = "Element")
+#whiskey.stand.melt
 
+#ggplot(whiskey.stand.melt, aes(x=value))+
+#  geom_histogram(bins=nclass.FD(whiskey.stand.melt$value))+
+#  geom_rug()
+```
 
 Looks closer to a poison or chi squared?
 
