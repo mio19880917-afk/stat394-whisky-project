@@ -16,6 +16,7 @@ library(reshape2)
 library(dplyr)
 library(pander)
 library(ggbiplot)
+library(caret)
 ```
 
 To Cover: - A high-level description of the study and its motivation. - A quantitative descriptive analysis of the data. - A graphical/qualitative analysis of the data. - Can you assume that the data follow a multivariate normal distribution? - no - Are there “surprising” observations? You must try to answer the question (with a proper discussion): Is the cluster analysis consistent with different distances and linkages?
@@ -274,26 +275,27 @@ ggplot(pca, aes(x=V1,y=V2, color=factor(Descriptor)))+
 ```
 
 ```{r}
-pca <- prcomp(whiskey.stand[-(1:2)], center=TRUE, scale=TRUE)
-summary(pca)
-pca$rotation
-ggbiplot(pca, obs.scale = 1, var.scale = 1, alpha = .1)
+pca2 <- prcomp(whiskey.stand[-(1:2)], center=TRUE, scale=TRUE)
+summary(pca2)
+pca2$rotation
+ggbiplot(pca2, obs.scale = 1, var.scale = 1, alpha = .1)
 ```
 
 ```{r}
-pca <- prcomp(subset(whiskey.stand, Descriptor!="Counterfeit")[,-(1:2)], center=TRUE, scale=TRUE)
-plot1 <- ggbiplot(pca, obs.scale = 1, var.scale = 1, alpha = .1)
-plot1 <- ggplotGrob(plot1)
+pca2 <- prcomp(subset(whiskey.stand, Descriptor!="Counterfeit")[,-(1:2)], center=TRUE, scale=TRUE)
+plot1 <- ggbiplot(pca2, obs.scale = 1, var.scale = 1, alpha = .1)+
+  ylim(-5, 5)+
+  ggtitle("Standardized, Log Transformed, Subset of Non-Counterfeit")
 
-pca <- prcomp(subset(whiskey.stand, Descriptor=="Counterfeit")[,-(1:2)], center=TRUE, scale=TRUE)
-plot2 <- ggbiplot(pca, obs.scale = 1, var.scale = 1, alpha = .1)
-plot2 <- ggplotGrob(plot2)
-
-grid.arrange(lsit(plot1, plot2), ncols=2, nrow= 1)
+pca2 <- prcomp(subset(whiskey.stand, Descriptor=="Counterfeit")[,-(1:2)], center=TRUE, scale=TRUE)
+plot2 <- ggbiplot(pca2, obs.scale = 1, var.scale = 1, alpha = .1)+
+  ggtitle("Standardized, Log Transformed, Subset of Counterfeit")
+#plot2
+grid.arrange(plot1, plot2, ncol=2)
 ```
+Once again, similar to the bar plots, immedietly the **Fe** axis jumps out, being negative across PC1.
 
-
-## Normal Assumptions
+## Multivariate Normality
 
 ```{r}
 plot_norm_est <- function(data, parameter, t) {
@@ -342,10 +344,10 @@ Again, all of these look skewed to the right. Fe looks the closest
 
 Interestingly you can make out the counterfeits seem to be the strange observations in S.
 
+**TODO: Anderson Darling Test - can't remember the exact name :p**
 ## Classifiying by distance
 
 ```{r}
-library(dplyr)
 p <- 11
 whiskey.log.counter <- whiskey.log |> filter(Descriptor == "Counterfeit")
 whiskey.log.no.counter <- whiskey.log |> filter(Descriptor != "Counterfeit")
@@ -388,3 +390,94 @@ data.frame(counter, non.counter, non.counter > counter)
 All non-counterfeit ones get correctly classified by distance
 
 TODO NEXT: - drop the value i'm test....
+
+```{r}
+classify.data <- function(p, drop_i) {
+  results <- data.frame(matrix(ncol=4,nrow=nrow(pca)))
+  colnames(results) <- c('sample', 'true_class','estimated_class','is_correct')
+  for (i in (1:nrow(pca))) {
+    if (drop_i) {
+      pca.dropped <- pca[-c(i),]
+    } else {
+      pca.dropped <- pca    
+    }
+  
+    pca.counter <- pca.dropped |> filter(Descriptor == "Counterfeit")
+    pca.no.counter <- pca.dropped |> filter(Descriptor != "Counterfeit")
+  
+    X1 <- pca.counter[(1:p)]
+    X2 <- pca.no.counter[(1:p)]
+    
+    dM.counter <- mahalanobis(pca[i,(1:p)], center=colMeans(X1), cov=cov(X1))
+    dM.non.counter <- mahalanobis(pca[i,(1:p)], center=colMeans(X2), cov=cov(X2))
+  
+    counter <- pchisq(dM.counter, df=p, lower.tail=FALSE)
+    non.counter <- pchisq(dM.non.counter, df=p, lower.tail=FALSE)
+  
+    results[i, ]$sample = i
+    if (pca[i,]$Descriptor == as.factor("Counterfeit")) {
+      results[i, ]$true_class = "Counterfeit"
+      if (counter > non.counter) {
+        # correct classifciation
+        results[i, ]$estimated_class = "Counterfeit"
+        results[i, ]$is_correct = TRUE
+      } else {
+        # incorrect classification
+        results[i, ]$estimated_class = "Non - Counterfeit"
+        results[i, ]$is_correct = FALSE
+      }
+    } else {
+      results[i, ]$true_class = "Non - Counterfeit"
+      if (non.counter > counter) {
+        # correct classification
+        results[i, ]$estimated_class = "Non - Counterfeit"
+        results[i, ]$is_correct = TRUE
+  
+      } else {
+        # incorrect classification
+        results[i, ]$estimated_class = "Counterfeit"
+        results[i, ]$is_correct = FALSE
+  
+      }
+    }
+  }
+  results$true_class <- as.factor(results$true_class)
+  results$estimated_class <- as.factor(results$estimated_class)
+  results
+}
+dropped.i <- classify.data(p=2, drop_i=TRUE)
+no.dropped.i <- classify.data(p=2, drop_i=FALSE)
+```
+
+Building confusion matrix:
+```{r}
+
+get.conf.mat <- function(data) {
+  conf.mat <- confusionMatrix(data$true_class, data$estimated_class)$table
+
+  ## From https://stackoverflow.com/questions/37897252/plot-confusion-matrix-in-r-using-ggplot
+  TClass <- factor(c("counterfeit", "counterfeit", "non-counterfeit", "non-counterfeit"))
+  PClass <- factor(c("counterfeit", "non-counterfeit", "counterfeit", "non-counterfeit"))
+  Y      <- c(conf.mat[1,1], conf.mat[1,2], 
+              conf.mat[2,1], conf.mat[2,2])
+  df <- data.frame(TClass, PClass, Y)
+  
+  ggplot(data =  df, mapping = aes(x = TClass, y = PClass)) +
+    geom_tile(aes(fill = Y), colour = "white") +
+    geom_text(aes(label = sprintf("%1.0f", Y)), vjust = 1) +
+    scale_fill_gradient(low = "blue", high = "red") +
+    theme_bw() + theme(legend.position = "none")
+
+}
+
+plot1 <- get.conf.mat(dropped.i) +
+  ggtitle("Classifying using Mahalanobis Distance, dropping the ith row")
+
+plot2 <- get.conf.mat(no.dropped.i) +
+  ggtitle("Classifying using Mahalanobis Distance, NOT dropping the ith row")
+
+grid.arrange(plot1, plot2, ncol=2)
+```
+using mahalanobis distance causes a fair bit of error when dropping the ith row for counterfeit observations. Might be because of the poor amount of data?
+
+
