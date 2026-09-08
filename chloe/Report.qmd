@@ -1,6 +1,6 @@
 ---
 title: "Multivariate Analysis of Scotch Whisky Components"
-format: html
+format: pdf
 editor: source
 ---
 
@@ -26,6 +26,21 @@ To Cover: - A high-level description of the study and its motivation. - A quanti
 
 ## Introduction
 
+### High level description of the study and its motivation 
+
+Seeing if it’s possible to classify whiskey as counterfeit using trace element analysis from total reflection x-ray fluorescence (TXRF). 
+The study also attempted cold ashing, but causes contamination - and they deemed it is unnecessary   
+
+As an alternative to ICP 
+How good was it
+- pretty good it seems, can correctly discriminate between non-counterfeit and counterfeit observations with a linear discriminator
+- TXRF should be easier to carry out compared to ICP
+
+Techniques used in the study are:
+- PCA
+- denodograms 
+- linear discrimnator
+
 ## Data
 
 The data contains contains 32 observations across:
@@ -38,7 +53,7 @@ The data contains contains 32 observations across:
 
 With trace elements for, (P, S, Cl, K, Ca, Mn, Fe, Cu, Zn, Br and Rb), measured  in mg/L.
 
-12 out of the 32 observations have at least one of the trace elements detected below LOD.
+12 out of the 32 observations have at least one of the trace element detected below LOD.
 All the counterfeit whiskey observations also have at least one variables below LOD
 
 Amount of observations below LOD by individual element:
@@ -154,7 +169,9 @@ plots <- lapply(1:7, function(i) {
   get.boxplots(subset(whiskey.melt, Descriptor == uniq.desc[i]), 0, max(whiskey.melt$value))
 })
 
-grid.arrange(grobs = plots, nrow = 3, main="log transformed Trace Element based on Descriptor")
+grid.arrange(grobs = plots[1:4], nrow = 2, main="log transformed Trace Element based on Descriptor")
+grid.arrange(grobs = plots[5:7], nrow = 2, main="log transformed Trace Element based on Descriptor")
+
 ```
 
 Because K's magnitude is so great compared to the other trace elements, standerdizing the data helps better compare across all trace elements.
@@ -168,7 +185,8 @@ plots <- lapply(1:7, function(i) {
   get.boxplots(subset(whiskey.stand.melt, Descriptor == uniq.desc[i]), -3.5, 3.5)
 })
 
-grid.arrange(grobs = plots, nrow = 3, main="log transformed and stranderdized Trace Element based on Descriptor")
+grid.arrange(grobs = plots[1:4], nrow = 2, main="log transformed and stranderdized Trace Element based on Descriptor")
+grid.arrange(grobs = plots[5:7], nrow = 2, main="log transformed and stranderdized Trace Element based on Descriptor")
 ```
 
 Looking at the boxplots there seem to be some differences. Counterfeit stands out a lot because of the high amount of S it compared to the others. Lowland has a suprisingly little amount of variance across all of it's elements.
@@ -177,7 +195,7 @@ Looking at the boxplots there seem to be some differences. Counterfeit stands ou
 As the sample size is tiny, any attempt at adding notches causes it to go outside the range of the hinges (outside of the IQR). For an example:
 
 ```{r}
-ggplot(data=subsect.3.melt, aes(x=Element, y=value)) +
+ggplot(data=subset(whiskey.melt, Descriptor=="Counterfeit"), aes(x=Element, y=value)) +
   geom_boxplot(aes(col=Element), notch = T) +
   facet_grid(~ Descriptor) +
   ylab("Trace Amount") +
@@ -240,9 +258,23 @@ upper.quantiles <- qchisq(c(.9, .95, .99), df=p)
 density.at.quantiles <- dchisq(x=upper.quantiles, df=p)
 cut.points <- data.frame(upper.quantiles, density.at.quantiles)
 
-ggplot(data.frame(dM), aes(x=dM)) +
-	geom_histogram(aes(y=after_stat(density)), bins=8,
-				   fill="white", col="black") +
+dM <- data.frame(dM)
+dM$Descriptor <- whiskey.data$Descriptor
+ggplot(dM, aes(x=dM)) +
+	#geom_histogram(aes(y=after_stat(density)), bins=8, col="black") +
+	geom_histogram(aes(fill=Descriptor, y=after_stat((count/sum(count))/4)), bins=8, col="black") +
+	geom_rug() +
+	stat_function(fun=dchisq, args = list(df=p),
+				  col="red", size=2, alpha=.7, xlim=c(-5,40)) +
+	geom_segment(data=cut.points,
+				 aes(x=upper.quantiles, xend=upper.quantiles,
+					 y=rep(0,3), yend=density.at.quantiles),
+				 col="blue", size=2) +
+	xlab("Mahalanobis distances and cut points") +
+	ylab("Histogram and density")
+ggplot(dM, aes(x=dM)) +
+	geom_histogram(aes(y=after_stat(density)), bins=8, col="black") +
+	#geom_histogram(aes(fill=Descriptor, y=after_stat(density/8)), bins=8, col="black") +
 	geom_rug() +
 	stat_function(fun=dchisq, args = list(df=p),
 				  col="red", size=2, alpha=.7, xlim=c(-5,40)) +
@@ -253,26 +285,37 @@ ggplot(data.frame(dM), aes(x=dM)) +
 	xlab("Mahalanobis distances and cut points") +
 	ylab("Histogram and density")
 ```
+The data seems to be forming 2 groups, with a dip in the middle (around 15 on the x axis). The only thing that stands out (for what might be the reason) is observations with 'Blend' as their descriptor are all to the left, dragging everything else with them.
 
+Its important to note the histograms with descriptor colours isn't scaled 100%, ngl, I have no idea how to do it correctly, but for a qualitative analysis it's close enough.
+
+**TODO: see what those points on the far right are**
 ### PCA
 
 ```{r}
 whiskey.log <- whiskey.data |> mutate(across(where(is.numeric), log))
 whiskey.stand <- whiskey.log |> mutate(across(where(is.numeric), ~(scale(.) %>% as.vector)))
 
-(Sigma <- cov(whiskey.stand[3:13]))
-eigen(Sigma)
+Sigma <- cov(whiskey.stand[-(1:2)])
+#eigen(Sigma)
 pca <- as.matrix(whiskey.stand[3:13]) %*% eigen(Sigma)$vectors
 ```
 
 ```{r}
 pca <- as.data.frame(pca)
 pca$Descriptor <- whiskey.data$Descriptor
-summary(pca)
 
-ggplot(pca, aes(x=V1,y=V2, color=factor(Descriptor)))+
-  geom_point(size=1)
+ggplot(pca, aes(x=V1,y=V2, color=factor(Descriptor), shape=factor(Descriptor)))+
+  geom_point(size=3)+
+  scale_shape_manual(values = c("Blend"=15,
+                                "Counterfeit"=16,
+                                "Grain"=17,
+                                "Highland"=3,
+                                "Island"=7,
+                                "Lowland"=8,
+                                "Speyside"=13))
 ```
+There is a clear separation of the counterfeits from the rest in the upper right corner. Grain seems to be seeping into that cluster a bit tho.
 
 ```{r}
 pca2 <- prcomp(whiskey.stand[-(1:2)], center=TRUE, scale=TRUE)
@@ -280,6 +323,7 @@ summary(pca2)
 pca2$rotation
 ggbiplot(pca2, obs.scale = 1, var.scale = 1, alpha = .1)
 ```
+**TODO: Inteperut this more **
 
 ```{r}
 pca2 <- prcomp(subset(whiskey.stand, Descriptor!="Counterfeit")[,-(1:2)], center=TRUE, scale=TRUE)
@@ -305,21 +349,23 @@ plot_norm_est <- function(data, parameter, t) {
     ggtitle(t)
 }
 
-plot_norm_est(whiskey.stand, whiskey.stand$P, "P")
-plot_norm_est(whiskey.stand, whiskey.stand$S, "S")
-plot_norm_est(whiskey.stand, whiskey.stand$Cl, "Cl")
-plot_norm_est(whiskey.stand, whiskey.stand$K, "K")
-plot_norm_est(whiskey.stand, whiskey.stand$Ca, "Ca")
-plot_norm_est(whiskey.stand, whiskey.stand$Mn, "Mn")
-plot_norm_est(whiskey.stand, whiskey.stand$Fe, "Fe")
-plot_norm_est(whiskey.stand, whiskey.stand$Cu, "Cu")
-plot_norm_est(whiskey.stand, whiskey.stand$Zn, "Zn")
-plot_norm_est(whiskey.stand, whiskey.stand$Br, "Br")
-plot_norm_est(whiskey.stand, whiskey.stand$Rb, "Rb")
+plots <- list(plot_norm_est(whiskey.stand, whiskey.stand$P, "P"),
+plot_norm_est(whiskey.stand, whiskey.stand$S, "S"),
+plot_norm_est(whiskey.stand, whiskey.stand$Cl, "Cl"),
+plot_norm_est(whiskey.stand, whiskey.stand$K, "K"),
+plot_norm_est(whiskey.stand, whiskey.stand$Ca, "Ca"),
+plot_norm_est(whiskey.stand, whiskey.stand$Mn, "Mn"),
+plot_norm_est(whiskey.stand, whiskey.stand$Fe, "Fe"),
+plot_norm_est(whiskey.stand, whiskey.stand$Cu, "Cu"),
+plot_norm_est(whiskey.stand, whiskey.stand$Zn, "Zn"),
+plot_norm_est(whiskey.stand, whiskey.stand$Br, "Br"),
+plot_norm_est(whiskey.stand, whiskey.stand$Rb, "Rb"))
+
+grid.arrange(grobs=plots[1:4], nrow=2)
+grid.arrange(grobs=plots[5:8], nrow=2)
+grid.arrange(grobs=plots[9:11], nrow=2)
 
 ```
-
-Hardly any of these look normal
 
 ```{r}
 plot.qq <- function(data, parameter, title) {
@@ -327,22 +373,28 @@ plot.qq <- function(data, parameter, title) {
     stat_qq(mapping = aes(colour = Descriptor)) + stat_qq_line()+
     ggtitle(paste("Normal QQ Plot for", title, sep=" "))
 }
-plot.qq(whiskey.stand, whiskey.stand$P, "P")
-plot.qq(whiskey.stand, whiskey.stand$S, "S")
-plot.qq(whiskey.stand, whiskey.stand$Cl, "Cl")
-plot.qq(whiskey.stand, whiskey.stand$K, "K")
-plot.qq(whiskey.stand, whiskey.stand$Ca, "Ca")
-plot.qq(whiskey.stand, whiskey.stand$Mn, "Mn")
-plot.qq(whiskey.stand, whiskey.stand$Fe, "Fe")
-plot.qq(whiskey.stand, whiskey.stand$Cu, "Cu")
-plot.qq(whiskey.stand, whiskey.stand$Zn, "Zn")
-plot.qq(whiskey.stand, whiskey.stand$Br, "Br")
-plot.qq(whiskey.stand, whiskey.stand$Rb, "Rb")
+plots <- list(plot.qq(whiskey.stand, whiskey.stand$P, "P")
+ ,plot.qq(whiskey.stand, whiskey.stand$S, "S")
+ ,plot.qq(whiskey.stand, whiskey.stand$Cl, "Cl")
+ ,plot.qq(whiskey.stand, whiskey.stand$K, "K")
+ ,plot.qq(whiskey.stand, whiskey.stand$Ca, "Ca")
+ ,plot.qq(whiskey.stand, whiskey.stand$Mn, "Mn")
+ ,plot.qq(whiskey.stand, whiskey.stand$Fe, "Fe")
+ ,plot.qq(whiskey.stand, whiskey.stand$Cu, "Cu")
+ ,plot.qq(whiskey.stand, whiskey.stand$Rb, "Rb")
+ ,plot.qq(whiskey.stand, whiskey.stand$Zn, "Zn")
+ ,plot.qq(whiskey.stand, whiskey.stand$Br, "Br"))
+
+grid.arrange(grobs=plots[1:4], nrow=2)
+grid.arrange(grobs=plots[5:8], nrow=2)
+grid.arrange(grobs=plots[9:11], nrow=2)
+
 ```
 
-Again, all of these look skewed to the right. Fe looks the closest
 
-Interestingly you can make out the counterfeits seem to be the strange observations in S.
+Interestingly you can make out the counterfeits seem to be the strange observations in **S**, and **Cu**.
+
+Apart from that the Q-Q plots look a-okay
 
 **TODO: Anderson Darling Test - can't remember the exact name :p**
 
@@ -428,10 +480,10 @@ get.conf.mat <- function(data) {
 }
 
 plot1 <- get.conf.mat(dropped.i) +
-  ggtitle("Classifying using Mahalanobis Distance, dropping the ith row")
+  ggtitle("Classifying, dropping the ith row")
 
 plot2 <- get.conf.mat(no.dropped.i) +
-  ggtitle("Classifying using Mahalanobis Distance, NOT dropping the ith row")
+  ggtitle("Classifying, keeping the ith row")
 
 grid.arrange(plot1, plot2, ncol=2)
 ```
@@ -440,3 +492,4 @@ using mahalanobis distance causes a fair bit of error when dropping the ith row 
 distance has to be done using PCA, since there would be too many factors compared to the amount of counterfeit observations (p > 5).
 
 
+**TODO: try classifying across all Descriptors**
