@@ -78,6 +78,7 @@ The two common ways of substituting LOD values are, $LOD/2$ and $LOD/\sqrt{2}$. 
 
 ```{r}
 #| echo: false
+
 whiskey.data <- read.csv("../whisky_trace_elements.csv", header=TRUE)
 
 handle_lod <- function(column) {
@@ -105,7 +106,7 @@ whiskey.data$Distillery <- as.factor(whiskey.data$Distillery)
 whiskey.data <- as.data.frame(whiskey.data)
 
 whiskey.num <- whiskey.data[,-(1:3)] #dropping factors + sample number 
-summary(whiskey.data[,-(1:3)])
+pander(do.call(cbind, lapply(whiskey.num, summary)))
 ```
 
 From the summary we can see all values are above 0, but they aren't all in the same magnitured of range. E.g., Br is a lot smaller than P.
@@ -114,6 +115,8 @@ From the summary we can see all values are above 0, but they aren't all in the s
 
 Lastly, looking at (standardized) histogram of all the variables, we can see it looks rather skew,
 ```{r}
+#| echo: false
+
 whiskey.stand <- whiskey.data |> 
   mutate(across(where(is.numeric), ~(scale(.) %>% as.vector)))
 whiskey.stand$Descriptor <- whiskey.data$Descriptor
@@ -128,6 +131,8 @@ ggplot(whiskey.stand.melt, aes(x=value))+
 ```
 After applying a log transform, the data looks a lot closer to a normal distribution.
 ```{r}
+#| echo: false
+
 whiskey.stand <- whiskey.data |> 
   mutate(across(where(is.numeric), log)) |>
   mutate(across(where(is.numeric), ~(scale(.) %>% as.vector))) 
@@ -148,8 +153,12 @@ ggplot(whiskey.stand.melt, aes(x=value))+
 ### Box Plots
 
 First looking at box plots of elements across Descriptor:
+Because K's magnitude is so great compared to the other trace elements, standerdizing the data helps better compare across all trace elements.
 
+You can see an example below of why it's important,
 ```{r}
+#| echo: false
+
 whiskey.melt <- melt(whiskey.data[,-2], 
                      id.vars="Descriptor", 
                      variable.name = "Element")
@@ -169,14 +178,16 @@ plots <- lapply(1:7, function(i) {
   get.boxplots(subset(whiskey.melt, Descriptor == uniq.desc[i]), 0, max(whiskey.melt$value))
 })
 
-grid.arrange(grobs = plots[1:4], nrow = 2, main="log transformed Trace Element based on Descriptor")
-grid.arrange(grobs = plots[5:7], nrow = 2, main="log transformed Trace Element based on Descriptor")
-
+grid.arrange(grobs = lapply(plots[c(1,5)], function(plot) {
+  plot + theme(aspect.ratio = .7)
+}), nrow = 1, main="log transformed Trace Element based on Descriptor")
 ```
 
-Because K's magnitude is so great compared to the other trace elements, standerdizing the data helps better compare across all trace elements.
-
+After standardization it's easier to compare.
+Looking at the boxplots there seem to be some differences. Counterfeit stands out a lot because of the high amount of **S** it has compared to the others. Lowland has a interestingly little amount of variance across all of it's elements.
 ```{r}
+#| echo: false
+
 whiskey.stand.melt <- melt(whiskey.stand[,-2], 
                      id.vars="Descriptor", 
                      variable.name = "Element")
@@ -189,12 +200,13 @@ grid.arrange(grobs = plots[1:4], nrow = 2, main="log transformed and stranderdiz
 grid.arrange(grobs = plots[5:7], nrow = 2, main="log transformed and stranderdized Trace Element based on Descriptor")
 ```
 
-Looking at the boxplots there seem to be some differences. Counterfeit stands out a lot because of the high amount of S it compared to the others. Lowland has a suprisingly little amount of variance across all of it's elements.
-
 #### Note on Notches for box plots
 As the sample size is tiny, any attempt at adding notches causes it to go outside the range of the hinges (outside of the IQR). For an example:
 
 ```{r}
+#| echo: false
+#| warning: false
+
 ggplot(data=subset(whiskey.melt, Descriptor=="Counterfeit"), aes(x=Element, y=value)) +
   geom_boxplot(aes(col=Element), notch = T) +
   facet_grid(~ Descriptor) +
@@ -215,23 +227,28 @@ get.ggcorrplot <- function(data, title){
     type = "lower",
     title = title,
     lab = TRUE,
-    lab_size =2.5
+    lab_size =2,
+    tl.cex = 8
     )
   plot
 }
 ```
 
 ```{r}
+#| echo: false
+
 get.ggcorrplot(cor(whiskey.data[,-(1:2)]), "Correlation Across all Classes")
 ```
 **K**, **P**, and **RB** all have strong postiive correlations with one another, 
 
 ```{r}
+#| echo: false
+
 counterfit.corrplot <- get.ggcorrplot(cor(subset(whiskey.data, Descriptor=="Counterfeit")[,-(1:2)]), "Correlation for Counterfeit Whiskey")
 
 non.counterfit.corrplot <- get.ggcorrplot(cor(subset(whiskey.data, Descriptor!="Counterfeit")[,-(1:2)]), "Correlation for Non-Counterfeit Whiskey")
 
-grid.arrange(counterfit.corrplot, non.counterfit.corrplot, ncol=2)
+grid.arrange(counterfit.corrplot+theme(legend.position = "none"), non.counterfit.corrplot+theme(legend.position = "none"), ncol=2)
 ```
 
 There's a clear indicator for some difference with a lot more negative correlations for the counterfeit whiskeys compared to the others. Particularly along **Fe**.
@@ -247,10 +264,8 @@ Due to the unbalanced observations, it makes sense that the original correlogram
 ### Mahalanobis:
 
 ```{r}
-cov(whiskey.num)
-```
+#| echo: false
 
-```{r}
 p <- 11
 dM <- mahalanobis(whiskey.data[-(1:2)], center=colMeans(whiskey.data[-(1:2)]), cov=cov(whiskey.data[-(1:2)]))
 
@@ -261,27 +276,25 @@ cut.points <- data.frame(upper.quantiles, density.at.quantiles)
 dM <- data.frame(dM)
 dM$Descriptor <- whiskey.data$Descriptor
 ggplot(dM, aes(x=dM)) +
-	#geom_histogram(aes(y=after_stat(density)), bins=8, col="black") +
 	geom_histogram(aes(fill=Descriptor, y=after_stat((count/sum(count))/4)), bins=8, col="black") +
 	geom_rug() +
 	stat_function(fun=dchisq, args = list(df=p),
-				  col="red", size=2, alpha=.7, xlim=c(-5,40)) +
+				  col="green", linewidth=2, alpha=.9, xlim=c(-5,40)) +
 	geom_segment(data=cut.points,
 				 aes(x=upper.quantiles, xend=upper.quantiles,
 					 y=rep(0,3), yend=density.at.quantiles),
-				 col="blue", size=2) +
+				 col="blue", linewidth=2) +
 	xlab("Mahalanobis distances and cut points") +
 	ylab("Histogram and density")
 ggplot(dM, aes(x=dM)) +
 	geom_histogram(aes(y=after_stat(density)), bins=8, col="black") +
-	#geom_histogram(aes(fill=Descriptor, y=after_stat(density/8)), bins=8, col="black") +
 	geom_rug() +
 	stat_function(fun=dchisq, args = list(df=p),
-				  col="red", size=2, alpha=.7, xlim=c(-5,40)) +
+				  col="green", linewidth=2, alpha=.7, xlim=c(-5,40)) +
 	geom_segment(data=cut.points,
 				 aes(x=upper.quantiles, xend=upper.quantiles,
 					 y=rep(0,3), yend=density.at.quantiles),
-				 col="blue", size=2) +
+				 col="blue", linewidth=2) +
 	xlab("Mahalanobis distances and cut points") +
 	ylab("Histogram and density")
 ```
@@ -290,9 +303,12 @@ The data seems to be forming 2 groups, with a dip in the middle (around 15 on th
 Its important to note the histograms with descriptor colours isn't scaled 100%, ngl, I have no idea how to do it correctly, but for a qualitative analysis it's close enough.
 
 **TODO: see what those points on the far right are**
+
 ### PCA
 
 ```{r}
+#| echo: false
+
 whiskey.log <- whiskey.data |> mutate(across(where(is.numeric), log))
 whiskey.stand <- whiskey.log |> mutate(across(where(is.numeric), ~(scale(.) %>% as.vector)))
 
@@ -302,11 +318,13 @@ pca <- as.matrix(whiskey.stand[3:13]) %*% eigen(Sigma)$vectors
 ```
 
 ```{r}
+#| echo: false
+
 pca <- as.data.frame(pca)
 pca$Descriptor <- whiskey.data$Descriptor
 
 ggplot(pca, aes(x=V1,y=V2, color=factor(Descriptor), shape=factor(Descriptor)))+
-  geom_point(size=3)+
+  geom_point(size=2.5)+
   scale_shape_manual(values = c("Blend"=15,
                                 "Counterfeit"=16,
                                 "Grain"=17,
@@ -326,6 +344,8 @@ ggbiplot(pca2, obs.scale = 1, var.scale = 1, alpha = .1)
 **TODO: Inteperut this more **
 
 ```{r}
+#| echo: false
+
 pca2 <- prcomp(subset(whiskey.stand, Descriptor!="Counterfeit")[,-(1:2)], center=TRUE, scale=TRUE)
 plot1 <- ggbiplot(pca2, obs.scale = 1, var.scale = 1, alpha = .1)+
   ylim(-5, 5)+
@@ -342,6 +362,9 @@ Once again, similar to the bar plots, immedietly the **Fe** axis jumps out, bein
 ## Multivariate Normality
 
 ```{r}
+#| eval: false
+#| include: false
+
 plot_norm_est <- function(data, parameter, t) {
   ggplot(data) +
     geom_histogram(mapping = aes(x = parameter, y=..density..), fill="steelblue", colour="black", bins = nclass.FD(parameter)) +
@@ -366,13 +389,17 @@ grid.arrange(grobs=plots[5:8], nrow=2)
 grid.arrange(grobs=plots[9:11], nrow=2)
 
 ```
-
 ```{r}
+#| echo: false
+
 plot.qq <- function(data, parameter, title) {
   ggplot(data, aes(sample=parameter)) +
-    stat_qq(mapping = aes(colour = Descriptor)) + stat_qq_line()+
-    ggtitle(paste("Normal QQ Plot for", title, sep=" "))
+    stat_qq(mapping = aes(colour = Descriptor)) + 
+    stat_qq_line()+
+    ggtitle(paste("Normal QQ Plot for", title, sep=" ")) +
+    theme(legend.position="bottom", aspect.ratio = .5)
 }
+
 plots <- list(plot.qq(whiskey.stand, whiskey.stand$P, "P")
  ,plot.qq(whiskey.stand, whiskey.stand$S, "S")
  ,plot.qq(whiskey.stand, whiskey.stand$Cl, "Cl")
@@ -385,9 +412,26 @@ plots <- list(plot.qq(whiskey.stand, whiskey.stand$P, "P")
  ,plot.qq(whiskey.stand, whiskey.stand$Zn, "Zn")
  ,plot.qq(whiskey.stand, whiskey.stand$Br, "Br"))
 
-grid.arrange(grobs=plots[1:4], nrow=2)
-grid.arrange(grobs=plots[5:8], nrow=2)
-grid.arrange(grobs=plots[9:11], nrow=2)
+# from https://stackoverflow.com/questions/13649473/add-a-common-legend-for-combined-ggplots
+g_legend<-function(a.gplot){
+  tmp <- ggplot_gtable(ggplot_build(a.gplot))
+  leg <- which(sapply(tmp$grobs, function(x) x$name) == "guide-box")
+  legend <- tmp$grobs[[leg]]
+  return(legend)}
+
+mylegend<-g_legend(plots[[1]])
+
+grid.arrange(arrangeGrob(plots[[1]] + theme(legend.position="none"), 
+                         plots[[2]] + theme(legend.position = "none"), 
+                         plots[[3]] + theme(legend.position="none"), 
+                         plots[[4]] + theme(legend.position = "none"), ncol=2))
+grid.arrange(arrangeGrob(plots[[5]] + theme(legend.position="none"), 
+                         plots[[6]] + theme(legend.position = "none"), 
+                         plots[[7]] + theme(legend.position="none"), 
+                         plots[[8]] + theme(legend.position = "none"), ncol=2))
+grid.arrange(arrangeGrob(plots[[9]] + theme(legend.position="none"), 
+                         plots[[10]] + theme(legend.position = "none"), 
+                         plots[[11]] + theme(legend.position="none"), ncol=2), mylegend, nrow=2, heights=c(20,3))
 
 ```
 
@@ -401,6 +445,8 @@ Apart from that the Q-Q plots look a-okay
 ## Classifiying by distance
 
 ```{r}
+#| echo: false
+
 classify.data <- function(p, drop_i) {
   results <- data.frame(matrix(ncol=4,nrow=nrow(pca)))
   colnames(results) <- c('sample', 'true_class','estimated_class','is_correct')
@@ -460,6 +506,7 @@ no.dropped.i <- classify.data(p=2, drop_i=FALSE)
 
 Building confusion matrix:
 ```{r}
+#| echo: false
 
 get.conf.mat <- function(data) {
   conf.mat <- confusionMatrix(data$true_class, data$estimated_class)$table
@@ -475,8 +522,7 @@ get.conf.mat <- function(data) {
     geom_tile(aes(fill = Y), colour = "white") +
     geom_text(aes(label = sprintf("%1.0f", Y)), vjust = 1) +
     scale_fill_gradient(low = "blue", high = "red") +
-    theme_bw() + theme(legend.position = "none")
-
+    theme_bw() + theme(legend.position = "none", aspect.ratio = 1)
 }
 
 plot1 <- get.conf.mat(dropped.i) +
