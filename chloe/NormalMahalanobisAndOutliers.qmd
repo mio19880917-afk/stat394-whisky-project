@@ -1,6 +1,7 @@
 ---
 title: "Normal/Mahalanobis and Outliers"
 format: html
+bibliography: citations/RobustMahalanobis.bib
 ---
 
 ```{r}
@@ -16,6 +17,8 @@ library(dplyr)
 library(pander)
 library(ggbiplot)
 library(caret)
+library(MASS)
+library(latex2exp)
 ```
 
 ```{r}
@@ -98,11 +101,16 @@ Can we assume a multivariate normal distribution?
 
 ### 7.1. Marginal normality
 
+We examine normal Q–Q plots for each log-transformed element. Points that lie approximately along a straight line support normality for that element, but these plots assess each element separately.
+
+To examine the elements together, we calculate squared Mahalanobis distances using the sample mean and covariance matrix of the log-transformed concentrations. We display these distances in a histogram with a chi-square density curve with eleven degrees of freedom and the 90%, 95% and 99% reference cutoffs. Because we estimate the mean and covariance from the same 32 samples, the curve provides an approximate reference. Visual agreement does not establish multivariate normality.
+
 #### Histograms
 
 ```{r}
 #| label: Fig_Histogram_By_Element
-
+#| fig-width: 12
+#| fig-height: 9
 
 ## From Mio's Report
 whisky.long <- whisky.data |>
@@ -119,8 +127,8 @@ ggplot(whisky.long, aes(x = Concentration)) +
 
 ```{r}
 #| label: Fig_QQ_By_Element
-#| fig-width: 8
-#| fig-height: 6
+#| fig-width: 12
+#| fig-height: 9
 
 ggplot(whisky.long, aes(sample=Concentration)) +
   stat_qq(mapping = aes(colour = Descriptor), size= 1) + 
@@ -131,6 +139,8 @@ ggplot(whisky.long, aes(sample=Concentration)) +
 ```
 
 #### Raw variables
+
+Bar plots?
 
 #### Log Transformed Variables
 
@@ -145,6 +155,8 @@ whisky.long.log <- whisky.log|>
 
 ```{r}
 #| label: Fig_Histograms_By_Element_Log
+#| fig-width: 12
+#| fig-height: 9
 
 ggplot(whisky.long.log, aes(x = Concentration)) +
   geom_histogram(bins = nclass.FD(whisky.long.log$Concentration), colour = histo.outline, fill = histo.col.2) +
@@ -153,8 +165,8 @@ ggplot(whisky.long.log, aes(x = Concentration)) +
 ```
 ```{r}
 #| label: Fig_QQ_By_Element_Log
-#| fig-width: 8
-#| fig-height: 6
+#| fig-width: 12
+#| fig-height: 9
 
 ggplot(whisky.long.log, aes(sample=Concentration)) +
   stat_qq(mapping = aes(colour = Descriptor), size= 1) + 
@@ -213,7 +225,9 @@ look at other methods for outliers?
 - IQR
 - MAD - mentioned in lectures, so might be worthwhile?
 
-### 8.1. Mahalanobis distance 
+### 8.1. Looking for Outliers 
+
+#### Mahalanobis Distance
 
 ```{r}
 
@@ -243,9 +257,124 @@ pander(dM |> slice_max(distance, n=5))
 pander(whisky.data |> filter(Sample_no %in% (dM |> slice_max(distance, n=5))$Sample_no))
 ```
 
+#### MAD
+
+original article only for univariate cases
+
+#### Mahalanobis-Minimum Covariance Determinant
+
+While Mahalanobis is often used to find outliers, @LEYS2018150 argues because of it's calculated using the sample mean and covariance matrix, it isn't robust, and instead propose a more robust method, using Minimum Covariance Determinant(MCD), which they title Mahalanobis-Minimum Covariance Determinant(MMCD).
+
+**insert MCD explanation?**
+
+The MMCD distances are calculated as such, where $c_k$ is the cut-off point, and $1-\alpha$ the confidence (is that the right word?),
+
+$$
+\sqrt{(X_i-\widehat\mu_{MCD})^T(\widehat\Sigma_{MCD})^{-1}(X_i-\widehat\mu_{MCD})}>c_k, c_k=\sqrt{\chi_{k;1-\alpha}^2}
+$$
+
+@LEYS2018150 gives 2 ways of calculating the MCP in R, "MCP50", and "MCP75". In their conclusion they suggest MCD75 if there isn't a reason to suspect more than 25% outliers, especially for smaller samples. Flowing their advice, the mahalanobis distances for this data is,
+
+```{r}
+output75 <-cov.mcd(whisky.log[-(1:3)], quantile.used = nrow(whisky.log[-(1:3)])*.75)
+mhmcd75 <-mahalanobis(whisky.log[-(1:3)], output75$center, output75$cov)
+
+mhmcd75 <- as.data.frame(mhmcd75)
+names(mhmcd75) <- c("distance")
+mhmcd75$Descriptor <- whisky.data$Descriptor
+mhmcd75$Sample_no <- whisky.data$Sample_no
+
+# cutoff
+alpha <-.01
+
+upper.quantiles <- qchisq(c(1-alpha), df=p)
+density.at.quantiles <- dchisq(x=upper.quantiles, df=p)
+cut.points <- data.frame(upper.quantiles, density.at.quantiles)
+
+ggplot(mhmcd75, aes(x=distance)) +
+	geom_histogram(aes(y=after_stat(density)), bins=nclass.FD(mhmcd75$distance), col=histo.outline, fill="lightgray") +
+	geom_rug() +
+	stat_function(fun=dchisq, args = list(df=p),
+				  col="blue", linewidth=1, alpha=.9, xlim=c(-5,40)) +
+	geom_segment(data=cut.points,
+				 aes(x=upper.quantiles, xend=upper.quantiles,
+					 y=rep(0,1), yend=density.at.quantiles),
+				 col="red", linewidth=1) +
+	xlab(TeX("MMCD distances and cutpoint at $\\alpha=.01$")) +
+	ylab("Histogram and density")
+```
+
+The results speak for themselves. Counterfeit is clearly distant from the rest of the observations by a significant margin. However, clumped up with the counterfeits, is a Grain, Island, and Speyside sample (see @Tbl_MMCD_Outliers)
+
+```{r}
+#| label: Tbl_MMCD_Outliers
+#| tbl-cap: "Observations lying above the cutoff point with $\\alpha=0.01$, alongside their descriptors, ordered by distance"
+
+outliers <- mhmcd75 |> filter(distance > upper.quantiles[1])|>
+  arrange(desc(distance))
+outliers.joined <- whisky.data |> filter(Sample_no %in% outliers$Sample_no)
+outliers.joined$MMCD_distance <- outliers$distance
+pander(outliers.joined)
+```
+
+
 ### 8.2 Investigate unusual samples 
 
-sample 12:
+Considering the distance that the counterfeit observations lie from the MCD estimated mean and covariance, there's enough evidence to indicate they're outliers for this distribution. It would be more interesting to look at the non-counterfeit samples, and why they might have such great distance scores (in particular sample no. 15, a Grain whisky, with a distance of 199).
+
+**sample 15:** Grain - Grain unmatured
+
+- P: 0.042
+- S: 5.53
+- Cl: 0.113
+- K: 3.25
+- Ca: 1.35
+- Mn: 0.012
+- Fe: 0.076
+- Cu: 0.164
+- Zn: 0.046
+- Br: 0.01
+- Rb: 0.003
+
+the only value that looks to be particularly high or low is **Rb**???
+
+**sample 20:** Island - Bunnahabhain
+
+- P: 2.24 - rather high
+- S: 7.54
+- Cl: 1.35 - rather high again
+- K: 36.2 - rather high again
+- Ca: 2.12 - a bit to the right
+- Mn: 0.051 
+- Fe: 0.184 - a bit to the right
+- Cu: 0.58
+- Zn: 0.057 - a bit ot the right
+- Br: 0.014
+- Rb: 0.037 - rather high again
+
+
+comparing the values for the elements agains the histograms, it'd have such a great distance. **P**, **Sl**, **Rb** are in the tails of their respective histograms. While **Ca**, **Fe**, and **Zn** are slightly to the right - figure out better wording for this
+
+What's more interesting is that sample no. 15, which had a distance of roughly 4 times greater doesn't have any immediately discernible oddities when looking at the univariate histograms. Which goes to show the intresting qualities multivariate data can contain. It's also reflected in the PCA, where you can clearly see sample no. 15 creep into the Counterfeit samples' cluster.
+
+**sample 29:** Speyside - Glennfiddich
+
+- P: 0.317
+- S: 2.72
+- Cl: 0.344
+- K: 12.4
+- Ca: 0.66
+- Mn: 0.029 - a bit to the right?
+- Fe: 0.132
+- Cu: 0.519
+- Zn: 0.193 - outer tail to the right
+- Br: 0.004
+- Rb: 0.013
+
+Similar to the grain outlier, it doesn't look too odd
+
+**sample 12:**
+
 - P; close to average
 - S; very high (not the highest tho)
 - Cl; definitly to the right tail, but not that out-there
@@ -263,4 +392,16 @@ How does it compare to other counterfeit variables
 
 
 ### 8.3. Important distinction 
+
+
+## Citations
+
+- https://www.sciencedirect.com/science/article/pii/S0022103117302123 - a more robust mahalanobis variant?
+"There are two types of detected outliers: those that are part of the original population (false positives) and those that come from a different population (true negatives)."
+
+Minimum Covariance Determinant (MCD)
+computationally taxing - but with a dataset of only 32 observations it shouldn't be too bad
+
+
+- MAD: https://www.sciencedirect.com/science/article/pii/S0022103113000668?via%3Dihub - THE citation on MAD lol - issue with this is that it's univariate, according to wikipedia (https://en.wikipedia.org/wiki/Median_absolute_deviation) it can be generalized to multivariate data using geometric distributions, but I can't find any more info on that, wikipedia sites(https://crates.io/crates/rstats) as an implementation, that seems to be their own generalisation? - https://arxiv.org/pdf/2605.01312v2 might be something worth reading
 

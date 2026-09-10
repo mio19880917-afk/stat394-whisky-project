@@ -58,7 +58,26 @@ div.sourceCode
 @media screen {
 pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
 }
-</style>
+/* CSS for citations */
+div.csl-bib-body { }
+div.csl-entry {
+  clear: both;
+}
+.hanging-indent div.csl-entry {
+  margin-left:2em;
+  text-indent:-2em;
+}
+div.csl-left-margin {
+  min-width:2em;
+  float:left;
+}
+div.csl-right-inline {
+  margin-left:2em;
+  padding-left:1em;
+}
+div.csl-indent {
+  margin-left: 2em;
+}</style>
 
 
 <script src="NormalMahalanobisAndOutliers_files/libs/clipboard/clipboard.min.js"></script>
@@ -73,6 +92,35 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <link href="NormalMahalanobisAndOutliers_files/libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
 <link href="NormalMahalanobisAndOutliers_files/libs/bootstrap/bootstrap-efbb37e9afcc02144ebbc7afd12a776f.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
 
+  <script src="https://cdnjs.cloudflare.com/polyfill/v3/polyfill.min.js?features=es6"></script>
+  <script defer="" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml-full.js" type="text/javascript"></script>
+
+<script type="text/javascript">
+const typesetMath = (el) => {
+  if (window.MathJax) {
+    // MathJax Typeset
+    window.MathJax.typeset([el]);
+  } else if (window.katex) {
+    // KaTeX Render
+    var mathElements = el.getElementsByClassName("math");
+    var macros = [];
+    for (var i = 0; i < mathElements.length; i++) {
+      var texText = mathElements[i].firstChild;
+      if (mathElements[i].tagName == "SPAN" && texText && texText.data) {
+        window.katex.render(texText.data, mathElements[i], {
+          displayMode: mathElements[i].classList.contains('display'),
+          throwOnError: false,
+          macros: macros,
+          fleqn: false
+        });
+      }
+    }
+  }
+}
+window.Quarto = {
+  typesetMath
+};
+</script>
 
 </head>
 
@@ -147,6 +195,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </section>
 <section id="raw-variables" class="level4">
 <h4 class="anchored" data-anchor-id="raw-variables">Raw variables</h4>
+<p>Bar plots?</p>
 </section>
 <section id="log-transformed-variables" class="level4">
 <h4 class="anchored" data-anchor-id="log-transformed-variables">Log Transformed Variables</h4>
@@ -235,8 +284,11 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <section id="surprising-observations" class="level2">
 <h2 class="anchored" data-anchor-id="surprising-observations">8. Surprising Observations</h2>
 <p>Are there surprising observations?</p>
-<section id="mahalanobis-distance" class="level3">
-<h3 class="anchored" data-anchor-id="mahalanobis-distance">8.1. Mahalanobis distance</h3>
+<p>look at other methods for outliers? - Z-Score Method - IQR - MAD - mentioned in lectures, so might be worthwhile?</p>
+<section id="looking-for-outliers" class="level3">
+<h3 class="anchored" data-anchor-id="looking-for-outliers">8.1. Looking for Outliers</h3>
+<section id="mahalanobis-distance" class="level4">
+<h4 class="anchored" data-anchor-id="mahalanobis-distance">Mahalanobis Distance</h4>
 <div class="cell">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb7"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>upper.quantiles <span class="ot">&lt;-</span> <span class="fu">qchisq</span>(<span class="fu">c</span>(.<span class="dv">9</span>, .<span class="dv">95</span>, .<span class="dv">99</span>), <span class="at">df=</span>p)</span>
 <span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>density.at.quantiles <span class="ot">&lt;-</span> <span class="fu">dchisq</span>(<span class="at">x=</span>upper.quantiles, <span class="at">df=</span>p)</span>
@@ -261,6 +313,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </div>
 </div>
 </div>
+<p>There seems to be observation above the <span class="math inline">\(99\%\)</span> cut-off point.</p>
 <div class="cell">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb8"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="fu">pander</span>(dM <span class="sc">|&gt;</span> <span class="fu">slice_max</span>(distance, <span class="at">n=</span><span class="dv">5</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output-display">
@@ -451,14 +504,59 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </table>
 </div>
 </div>
-<p>sample 12: - P; close to average - S; very high (not the highest tho) - Cl; - K; - Ca; - Mn; - Fe; - Cu; - Zn; ### 8.2 Investigate unusual samples</p>
+</section>
+<section id="mad" class="level4">
+<h4 class="anchored" data-anchor-id="mad">MAD</h4>
+<p>original article only for univariate cases</p>
+</section>
+<section id="mahalanobis-minimum-covariance-determinantmcb" class="level4">
+<h4 class="anchored" data-anchor-id="mahalanobis-minimum-covariance-determinantmcb">Mahalanobis-Minimum Covariance Determinant(MCB)</h4>
+<p>While Mahalanobis is often used to find outliers, <span class="citation" data-cites="LEYS2018150">Leys et al. (<a href="#ref-LEYS2018150" role="doc-biblioref">2018</a>)</span> argues</p>
+<p><span class="math display">\[
+\sqrt{(X_i-\widehat\mu_{MCD})^T(\widehat\Sigma_{MCD})^{-1}(X_i-\widehat\mu_{MCD})}&gt;c_k, c_k=\sqrt{\chi_{k;1-\alpha}^2}
+\]</span></p>
+</section>
+</section>
+<section id="investigate-unusual-samples" class="level3">
+<h3 class="anchored" data-anchor-id="investigate-unusual-samples">8.2 Investigate unusual samples</h3>
+<p>sample 12:</p>
+<ul>
+<li>P; close to average</li>
+<li>S; very high (not the highest tho)</li>
+<li>Cl; definitly to the right tail, but not that out-there</li>
+<li>K; close to average</li>
+<li>Ca; relatively close to average</li>
+<li>Mn; Not too sure…</li>
+<li>Fe; Not too sure…</li>
+<li>Cu; close-ish to average</li>
+<li>Zn; again, not <em>too</em> out of the ordinary</li>
+<li>Br; <em>veryy</em> high</li>
+<li>Rb; super low</li>
+</ul>
+<p>How does it compare to other counterfeit variables</p>
 </section>
 <section id="important-distinction" class="level3">
 <h3 class="anchored" data-anchor-id="important-distinction">8.3. Important distinction</h3>
 </section>
 </section>
+<section id="citations" class="level2">
+<h2 class="anchored" data-anchor-id="citations">Citations</h2>
+<ul>
+<li>https://www.sciencedirect.com/science/article/pii/S0022103117302123 - a more robust mahalanobis variant? “There are two types of detected outliers: those that are part of the original population (false positives) and those that come from a different population (true negatives).”</li>
+</ul>
+<p>Minimum Covariance Determinant (MCD) computationally taxing - but with a dataset of only 32 observations it shouldn’t be too bad</p>
+<ul>
+<li><p>MAD: https://www.sciencedirect.com/science/article/pii/S0022103113000668?via%3Dihub - issue with this is that it’s univariate, according to wikipedia (https://en.wikipedia.org/wiki/Median_absolute_deviation) it can be generalized to multivariate data using geometric distributions, but I can’t find any more info on that, wikipedia sites(https://crates.io/crates/rstats) as an implementation, that seems to be their own generalisation? - https://arxiv.org/pdf/2605.01312v2 might be something worth reading</p></li>
+<li><p>https://www.sciencedirect.com/science/article/pii/S0022103113000668?via%3Dihub - original MAD - only discusses univariate cases</p></li>
+</ul>
 
-</main>
+</section>
+
+<div id="quarto-appendix" class="default"><section class="quarto-appendix-contents" role="doc-bibliography" id="quarto-bibliography"><h2 class="anchored quarto-appendix-heading">References</h2><div id="refs" class="references csl-bib-body hanging-indent" role="list">
+<div id="ref-LEYS2018150" class="csl-entry" role="listitem">
+Leys, Christophe, Olivier Klein, Yves Dominicy, and Christophe Ley. 2018. <span>“Detecting Multivariate Outliers: Use a Robust Variant of the Mahalanobis Distance.”</span> <em>Journal of Experimental Social Psychology</em> 74: 150–56. https://doi.org/<a href="https://doi.org/10.1016/j.jesp.2017.09.011">https://doi.org/10.1016/j.jesp.2017.09.011</a>.
+</div>
+</div></section></div></main>
 <!-- /main column -->
 <script id="quarto-html-after-body" type="application/javascript">
   window.document.addEventListener("DOMContentLoaded", function (event) {
