@@ -20,6 +20,7 @@ library(caret)
 library(MASS)
 library(latex2exp)
 library(rrcov)
+library(mvnTest)
 ```
 
 ```{r}
@@ -98,6 +99,7 @@ whisky.data <- as.data.frame(whisky.data)
 ```
 
 ## 7. Multivariate Normality 
+
 Can we assume a multivariate normal distribution?
 
 ### 7.1. Marginal normality
@@ -144,7 +146,6 @@ ggplot(whisky.long, aes(sample=Concentration)) +
 the tails of the Q-Q plots have a curving to them (quite extreme in the right tails). Mn looks to have a lot more scatter around the line, which matches it's histogram, with its almost bimodal look
 
 #### Raw variables
-
 
 Bar plots?
 
@@ -225,6 +226,14 @@ myplot +
               alpha = .6)
 ```
 
+#### Anderson Darling Test
+
+```{r}
+ad_test <- AD.test(whisky.log[-(1:3)])
+ad_test
+```
+
+
 ### 7.3. Conclusion 
 
 Multivariate normality is approximately reasonable but imperfect after log-transforming the original data.
@@ -245,6 +254,7 @@ look at other methods for outliers?
 #### Mahalanobis Distance
 
 ```{r}
+#| label: Plotting_Mahalanobis_Againt_Chi_Squared
 
 upper.quantiles <- qchisq(c(.9, .95, .99), df=p)
 density.at.quantiles <- dchisq(x=upper.quantiles, df=p)
@@ -265,7 +275,14 @@ ggplot(dM, aes(x=distance)) +
 There seems to be observation above the $99\%$ cut-off point.
 
 ```{r}
-pander(dM |> slice_max(distance, n=5))
+
+outliers <- dM |> 
+  slice_max(distance, n=5) |>
+  arrange(desc(distance))
+
+outliers.joined <- whisky.data |> filter(Sample_no %in% outliers$Sample_no)
+outliers.joined$dM_distance <- outliers$distance
+pander(outliers.joined)
 ```
 
 ```{r}
@@ -334,7 +351,7 @@ pander(outliers.joined)
 #### MRCD
 
 ```{r}
-set.seed(123456)
+set.seed(1234567890)
 out <-CovMcd(whisky.log[-(1:3)], alpha = .75, seed = .Random.seed)
 mrxdmb <-mahalanobis(whisky.log[-(1:3)], out$center, out$cov)
 
@@ -467,3 +484,5 @@ oops....
 distribution of the robust distances can be better approximated by an F -distribution, see15."
 
 - https://arxiv.org/abs/1701.07086
+
+- https://www.tandfonline.com/doi/epdf/10.1198/106186005X77685?needAccess=true
