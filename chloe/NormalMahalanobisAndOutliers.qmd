@@ -1,7 +1,7 @@
 ---
 title: "Normal/Mahalanobis and Outliers"
 format: html
-bibliography: citations/RobustMahalanobis.bib
+bibliography: [citations/RobustMahalanobis.bib, citations/ShandEtAl.bib]
 ---
 
 ```{r}
@@ -19,6 +19,7 @@ library(ggbiplot)
 library(caret)
 library(MASS)
 library(latex2exp)
+library(rrcov)
 ```
 
 ```{r}
@@ -123,6 +124,8 @@ ggplot(whisky.long, aes(x = Concentration)) +
   labs(x = "Concentration (mg/L)", y = "Frequency")
 ```
 
+A cursory look at the histograms for all the elements (except Mn) has a long tail, indicative of a log normal distribution. 
+
 #### QQ Plots 
 
 ```{r}
@@ -138,13 +141,18 @@ ggplot(whisky.long, aes(sample=Concentration)) +
   scale_color_manual(values = descriptor_colours)
 ```
 
+the tails of the Q-Q plots have a curving to them (quite extreme in the right tails). Mn looks to have a lot more scatter around the line, which matches it's histogram, with its almost bimodal look
+
 #### Raw variables
+
 
 Bar plots?
 
 #### Log Transformed Variables
 
 ```{r}
+#| label: Log_Transforming_Whisky_Data
+
 whisky.log <- whisky.data |>
   mutate(across(where(is.numeric), log))
 
@@ -163,6 +171,7 @@ ggplot(whisky.long.log, aes(x = Concentration)) +
   facet_wrap(~ Element, scales = "free", ncol = 4) +
   labs(x = "Concentration (mg/L)", y = "Frequency")
 ```
+
 ```{r}
 #| label: Fig_QQ_By_Element_Log
 #| fig-width: 12
@@ -175,14 +184,20 @@ ggplot(whisky.long.log, aes(sample=Concentration)) +
   labs(x = "Theoretical Quantile", y = "Sample Quantile") +
   scale_color_manual(values = descriptor_colours)
 ```
-Does log transformation improve normality?
-Are there remaining skewed variables?
-Are the tails problematic?
+
+- Does log transformation improve normality?
+- Are there remaining skewed variables?
+- Are the tails problematic?
+
+
+At first glance there were hints that Mn might be bimodal, with it's two distinct peaks, making me think it might be formed from the counterfeit vs non-counterfeit observations, but further investigation through taking the logs, and looking at PCA in section (**insert section here**), shows that's most likely not the case. Furthermore, there wouldn't be enough counterfeit observations to create such a distinct peak.
 
 ### 7.2. Multivariate normality 
 
 
 ```{r}
+#| label: Regular_Mahalanobis
+
 p <- 11
 
 dM <- mahalanobis(whisky.log[-(1:3)], center=colMeans(whisky.log[-(1:3)]), cov=cov(whisky.log[-(1:3)]))
@@ -316,11 +331,50 @@ outliers.joined <- whisky.data |> filter(Sample_no %in% outliers$Sample_no)
 outliers.joined$MMCD_distance <- outliers$distance
 pander(outliers.joined)
 ```
+#### MRCD
 
+```{r}
+set.seed(123456)
+out <-CovMcd(whisky.log[-(1:3)], alpha = .75, seed = .Random.seed)
+mrxdmb <-mahalanobis(whisky.log[-(1:3)], out$center, out$cov)
+
+mrxdmb <- as.data.frame(mrxdmb)
+names(mrxdmb) <- c("distance")
+mrxdmb$Descriptor <- whisky.data$Descriptor
+mrxdmb$Sample_no <- whisky.data$Sample_no
+
+# cutoff
+alpha <-.01
+
+upper.quantiles <- qchisq(c(1-alpha), df=p)
+density.at.quantiles <- dchisq(x=upper.quantiles, df=p)
+cut.points <- data.frame(upper.quantiles, density.at.quantiles)
+
+ggplot(mrxdmb, aes(x=distance)) +
+	geom_histogram(aes(y=after_stat(density)), bins=nclass.FD(mrxdmb$distance), col=histo.outline, fill="lightgray") +
+	geom_rug() +
+	stat_function(fun=dchisq, args = list(df=p),
+				  col="blue", linewidth=1, alpha=.9, xlim=c(-5,40)) +
+	geom_segment(data=cut.points,
+				 aes(x=upper.quantiles, xend=upper.quantiles,
+					 y=rep(0,1), yend=density.at.quantiles),
+				 col="red", linewidth=1) +
+	xlab(TeX("MMCD distances and cutpoint at $\\alpha=.01$")) +
+	ylab("Histogram and density")
+```
+```{r}
+outliers <- mrxdmb |> filter(distance > upper.quantiles[1])|>
+  arrange(desc(distance))
+outliers.joined <- whisky.data |> filter(Sample_no %in% outliers$Sample_no)
+outliers.joined$MMRCD_distance <- outliers$distance
+pander(outliers.joined)
+```
 
 ### 8.2 Investigate unusual samples 
 
 Considering the distance that the counterfeit observations lie from the MCD estimated mean and covariance, there's enough evidence to indicate they're outliers for this distribution. It would be more interesting to look at the non-counterfeit samples, and why they might have such great distance scores (in particular sample no. 15, a Grain whisky, with a distance of 199).
+
+Maybe take into consideration how MCD affect samples with an unbalanced amount of classes
 
 **sample 15:** Grain - Grain unmatured
 
@@ -393,6 +447,7 @@ How does it compare to other counterfeit variables
 
 ### 8.3. Important distinction 
 
+@SHAND201714 claims there aren't any outliers.
 
 ## Citations
 
@@ -405,3 +460,10 @@ computationally taxing - but with a dataset of only 32 observations it shouldn't
 
 - MAD: https://www.sciencedirect.com/science/article/pii/S0022103113000668?via%3Dihub - THE citation on MAD lol - issue with this is that it's univariate, according to wikipedia (https://en.wikipedia.org/wiki/Median_absolute_deviation) it can be generalized to multivariate data using geometric distributions, but I can't find any more info on that, wikipedia sites(https://crates.io/crates/rstats) as an implementation, that seems to be their own generalisation? - https://arxiv.org/pdf/2605.01312v2 might be something worth reading
 
+-https://arxiv.org/pdf/1709.07045 - 
+"to avoid excessive noise it is however recommended that n > 5p, so that we have at least 5 observations per dimension. (When this condition is not satisfied one can instead use the MRCD method (11) described near the end of this article."
+oops....
+"For relatively small n the true
+distribution of the robust distances can be better approximated by an F -distribution, see15."
+
+- https://arxiv.org/abs/1701.07086

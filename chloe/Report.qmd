@@ -338,8 +338,8 @@ There is a clear separation of the counterfeits from the rest in the upper right
 ```{r}
 pca2 <- prcomp(whiskey.stand[-(1:2)], center=TRUE, scale=TRUE)
 summary(pca2)
-pca2$rotation
-ggbiplot(pca2, obs.scale = 1, var.scale = 1, alpha = .1)
+pca2$rotation[,(1:3)]
+ggbiplot(pca2, choices=2:3, obs.scale = 1, var.scale = 1, alpha = .1)
 ```
 **TODO: Inteperut this more **
 

@@ -52,3 +52,6 @@ rsconnect/
 ## unneeded Quarto .html and output stuff for me (chloe)
 chloe/Report_files/
 chloe/Report.html
+chloe/NormalMahalanobisAndOutliers_files/
+chloe/NormalMahalanobisAndOutliers.html
+chloe/Report.pdf
