@@ -13,7 +13,7 @@ bibliography: [
 ---
 
 ```{r}
-#| label: Load Libraries
+#| label: Load_Libraries
 #| include: false
 
 library(tidyverse)
@@ -32,7 +32,7 @@ library(mvnTest)
 ```
 
 ```{r}
-#| label: Set Theme
+#| label: Set_Theme
 #| include: false
 
 set_theme(
@@ -75,7 +75,7 @@ histo.outline <- "#4f4f4f"
 ```
 
 ```{r}
-#| label: Prepping Data
+#| label: Prepping_Data
 #| include: false
 
 whisky.data <- read.csv("../whisky_trace_elements.csv", header=TRUE)
@@ -120,6 +120,7 @@ To examine the elements together, we calculate squared Mahalanobis distances usi
 
 ```{r}
 #| label: Fig_Histogram_By_Element
+#| fig-cap: \"Histograms of the original-scale concentrations for each trace element.\"
 #| fig-width: 12
 #| fig-height: 9
 
@@ -134,12 +135,13 @@ ggplot(whisky.long, aes(x = Concentration)) +
   labs(x = "Concentration (mg/L)", y = "Frequency")
 ```
 
-A cursory look at the histograms for all the elements (except Mn) has a long tail, indicative of a log normal distribution. 
+At a cursory glance, the histograms for all elements except Mn show a long right tail, which is consistent with the possibility that the variables are approximately log-normal on their original scale. 
 
 #### QQ Plots 
 
 ```{r}
 #| label: Fig_QQ_By_Element
+#| fig-cap: \"Normal Q–Q plots of the original-scale concentrations for each trace element, grouped by descriptor.\"
 #| fig-width: 12
 #| fig-height: 9
 
@@ -151,13 +153,11 @@ ggplot(whisky.long, aes(sample=Concentration)) +
   scale_color_manual(values = descriptor_colours)
 ```
 
-the tails of the Q-Q plots have a curving to them (quite extreme in the right tails). Mn looks to have a lot more scatter around the line, which matches it's histogram, with its almost bimodal look
-
-#### Raw variables
-
-Bar plots?
+The tails of the Q–Q plots show some curvature, which is particularly pronounced in the right tails. Mn also shows substantially more scatter around the reference line, which is consistent with its histogram and its almost bimodal appearance.
 
 #### Log Transformed Variables
+
+Because the histograms are so right skewed, log transforming them might bring their shape closer to a normal distribution.
 
 ```{r}
 #| label: Log_Transforming_Whisky_Data
@@ -172,6 +172,7 @@ whisky.long.log <- whisky.log|>
 
 ```{r}
 #| label: Fig_Histograms_By_Element_Log
+#| fig-cap: \"Histograms of the log-transformed concentrations for each trace element.\"
 #| fig-width: 12
 #| fig-height: 9
 
@@ -183,6 +184,7 @@ ggplot(whisky.long.log, aes(x = Concentration)) +
 
 ```{r}
 #| label: Fig_QQ_By_Element_Log
+#| fig-cap: \"Normal Q–Q plots of the log-transformed concentrations for each trace element, grouped by descriptor.\"
 #| fig-width: 12
 #| fig-height: 9
 
@@ -194,18 +196,23 @@ ggplot(whisky.long.log, aes(sample=Concentration)) +
   scale_color_manual(values = descriptor_colours)
 ```
 
-- Does log transformation improve normality?
-- Are there remaining skewed variables?
-- Are the tails problematic?
+The main questions at this stage are whether the log transformation improves normality, whether any variables remain noticeably skewed, and whether the tails continue to present problems.
 
 
-At first glance there were hints that Mn might be bimodal, with it's two distinct peaks, making me think it might be formed from the counterfeit vs non-counterfeit observations, but further investigation through taking the logs, and looking at PCA in section (**insert section here**), shows that's most likely not the case. Furthermore, there wouldn't be enough counterfeit observations to create such a distinct peak.
+At first glance, there were hints that Mn might be bimodal because of its two distinct peaks. This raised the possibility that the apparent bimodality might be related to the counterfeit versus non-counterfeit observations. However, further investigation after taking the logarithms, together with the PCA in section (**insert section here**), suggests that this is most likely not the case. Furthermore, there would not be enough counterfeit observations to create such a distinct peak.
+
+Log transforming the variables clearly improves their normality.
+
+There are a few variables that remain slightly skewed, with most of the more noticeable deviations associated with Island or Counterfeit observations.
+
+The only tails that look particularly unusual are those for **Zn**. Island and Counterfeit observations curve upward in the right-hand tail of the Q–Q plot, while Blend observations curve downward on the left.
 
 ### 7.2. Multivariate normality 
 
 
 ```{r}
 #| label: Regular_Mahalanobis
+#| fig-cap: \"Normal Q–Q plot of squared Mahalanobis distances against the theoretical chi-square distribution with 11 degrees of freedom.\"
 
 p <- 11
 
@@ -235,11 +242,17 @@ myplot +
               alpha = .6)
 ```
 
+The Q–Q plot for the Mahalanobis distances looks good. Most observations closely follow the reference line across the graph, without substantial deviation or curvature.
+
+It is interesting to note that four of the five Counterfeit observations stand out so strongly.
+
 #### Anderson Darling Test
 
-Performing and Anderson-Darling test for Multivariate Normality on the log-transformed data set, gives a test statistic of 0.2871985, and a corresponding p-value of 0.9561044. The null hypothesis isn't rejected.
+Performing an Anderson–Darling test for multivariate normality on the log-transformed data gives a test statistic of 0.2871985 and a corresponding p-value of 0.9561044. The null hypothesis is therefore not rejected.
 
 ```{r}
+#| label: AD_Test
+
 ad_test <- AD.test(whisky.log[-(1:3)])
 ad_test
 ```
@@ -249,11 +262,8 @@ ad_test
 
 After log-transforming the original data, multivariate normality is approximately reasonable but imperfect.
 
-Why?
-- anderson darling test
-- evidence that counterfeit samples might come from a different distribution.
-- individual Q-Q plot and Histograms look good
-- mahalanobis distance Q-Q plot looks good
+The Anderson–Darling test supports not rejecting multivariate normality.
+Additionally, the individual Q–Q plots and histograms generally look good after transformation, and the Mahalanobis-distance Q–Q plot also shows close agreement with the reference distribution. At the same time, there is evidence that the Counterfeit samples might come from a different distribution, so the conclusion remains that multivariate normality is approximately reasonable but imperfect.
 
 ## 8. Surprising Observations 
 
@@ -263,8 +273,11 @@ Are there surprising observations?
 
 #### Mahalanobis Distance
 
+Plotting the Mahalanobis distances calculated in Section 7.2.
+
 ```{r}
 #| label: Plotting_Mahalanobis_Againt_Chi_Squared
+#| fig-cap: \"Histogram of squared Mahalanobis distances with the chi-square reference density and 90%, 95%, and 99% cutoffs.\"
 
 upper.quantiles <- qchisq(c(.9, .95, .99), df=p)
 density.at.quantiles <- dchisq(x=upper.quantiles, df=p)
@@ -282,9 +295,15 @@ ggplot(dM, aes(x=distance)) +
 	xlab("Mahalanobis distances and cut points") +
 	ylab("Histogram and density")
 ```
-There seems to be observation above the $99\%$ cut-off point.
+The only observation above the 99th-percentile cutoff is sample 20.
+
+While none of the other observations has a particularly high distance metric (none is above the 95th percentile), it is still useful to examine the eight observations with the largest distances to see where the potentially unusual observations lie (@Tbl_Md).
+
+It is interesting to note that
 
 ```{r}
+#| label: Tbl_Md
+#| tbl-cap: "The 8 observations with the highest dM Distances, alongside their descriptors, ordered by distance"
 
 outliers <- dM |>
   slice_max(distance, n=8, with_ties=TRUE)
@@ -295,29 +314,27 @@ pander(outliers.joined)
 ```
 
 
-#### MAD
-
-original article only for univariate cases - although have seen generalization to multivariate data using geometric distribution from an R Cargo package. The package doesn't cite any sources, so I'm not sure authenticity of it - plus I can't find any other articles/paper about it.
-
 #### Mahalanobis-Minimum Covariance Determinant
 
-While Mahalanobis is often used to find outliers, @LEYS2018150 argues because of it's calculated using the sample mean and covariance matrix, it isn't robust, and instead propose a more robust method, using Minimum Covariance Determinant(MCD), which they title Mahalanobis-Minimum Covariance Determinant(MMCD).
+While Mahalanobis distance is often used to identify outliers, @LEYS2018150 argues that the standard calculation is not robust because it uses the sample mean and covariance matrix. They instead propose a more robust approach based on the Minimum Covariance Determinant (MCD), which they refer to in the context of Mahalanobis distances as the Mahalanobis-Minimum Covariance Determinant (MMCD).
 
-**insert MCD explanation?**
+Here, the MCD estimates the centre and covariance matrix using a subset of the observations chosen to give a robust estimate of the underlying distribution. This reduces the influence that potential outliers can have on the estimated centre and covariance.
 
-The MMCD distances are calculated as such, where $c_k$ is the cut-off point, and $1-\alpha$ the confidence (is that the right word?),
+The MMCD distances are calculated as follows, where $c_k$ is the cutoff point and $1-\alpha$ determines the tail probability used for the cutoff. The resulting distance is compared with this cutoff to identify observations that are unusually far from the robustly estimated centre.
 
 $$
 \sqrt{(X_i-\widehat\mu_{MCD})^T(\widehat\Sigma_{MCD})^{-1}(X_i-\widehat\mu_{MCD})}>c_k, c_k=\sqrt{\chi_{k;1-\alpha}^2}
 $$
 
-@LEYS2018150 gives 2 ways of calculating the MCP in R, "MCP50", and "MCP75".
+@LEYS2018150 gives two examples of calculating the MCD in R, using "MCD50" and "MCD75". These refer to the proportion of observations used in the robust estimation; in this analysis, MCD75 is used.
 
-**insert what MCPxx is ($1-\alpha$)**
-
-In their conclusion they suggest MCD75 if there isn't a reason to suspect more than 25% outliers, especially for smaller samples. Flowing their advice, the mahalanobis distances for this data is,
+In their conclusion, they suggest MCD75 when there is no reason to suspect more than 25% outliers, particularly for smaller samples. Following this advice, the Mahalanobis distances for these data are:
 
 ```{r}
+#| label: Plotting_MMCD_Againt_Chi_Squared
+#| fig-cap: \"Histogram of MMCD distances with the chi-square reference density and the $lpha=0.01$ cutoff.\"
+
+
 output75 <-cov.mcd(whisky.log[-(1:3)], quantile.used = nrow(whisky.log[-(1:3)])*.75)
 mhmcd75 <-mahalanobis(whisky.log[-(1:3)], output75$center, output75$cov)
 
@@ -346,7 +363,7 @@ ggplot(mhmcd75, aes(x=distance)) +
 	ylab("Histogram and density")
 ```
 
-The results speak for themselves. Counterfeit is clearly distant from the rest of the observations by a significant margin. However, clumped up with the counterfeits, is a Grain, Island, and Speyside sample (see @Tbl_MMCD_Outliers)
+The results show a clear separation between the Counterfeit observations and the rest of the data. However, grouped with the Counterfeit observations are one Grain, one Island, and one Speyside sample (see @Tbl_MMCD_Outliers).
 
 ```{r}
 #| label: Tbl_MMCD_Outliers
@@ -361,16 +378,20 @@ pander(outliers.joined|>
 
 #### MRCD
 
-"to avoid excessive noise it is however recommended that n > 5p, so that we have at least 5 observations per dimension. (When this condition is not satisfied one can instead use the MRCD method" - @Hubert_2017
+@Hubert_2017 notes that, to avoid excessive noise, it is recommended that $n > 5p$, so that there are at least five observations per dimension. When this condition is not satisfied, the MRCD method can instead be used.
 
 ```{r}
-32 - (32*.75)
+#| label: Calculate_MCD_Excluded_Observations
+
+32 - (32 * .75)
 ```
 
-"Typically one sets $h = ⌈0.75n⌉$ to get a better efficiency." @Boudt_2019. **maybe move this up **
+@Boudt_2019 states that $h = \lceil 0.75n\rceil$ is typically used to obtain better efficiency. This is consistent with the 75% setting used below.
 
 ```{r}
-set.seed(1234567890)
+#| label: Plotting_MMRCD_Againt_Chi_Squared
+#| fig-cap: \"Histogram of MRCD-based distances with the chi-square reference density and the selected cutoffs.\"
+
 out <-CovMrcd(whisky.log[-(1:3)], alpha = .75)
 mrxdmb <-mahalanobis(whisky.log[-(1:3)], out$center, out$cov)
 
@@ -399,119 +420,122 @@ ggplot(mrxdmb, aes(x=distance)) +
 	ylab("Histogram and density")
 ```
 ```{r}
-outliers <- mrxdmb |> filter(distance > upper.quantiles[2]) 
+#| label: Tbl_MMRCD_Outliers
+#| tbl-cap: "Observations lying above the cutoff point with $\\alpha=0.01$, alongside their descriptors, ordered by distance"
+
+outliers <- mrxdmb |> filter(distance > upper.quantiles[1]) 
 outliers.joined <- whisky.data |> filter(Sample_no %in% outliers$Sample_no)
 outliers.joined$MMRCD_distance <- outliers$distance
 pander(outliers.joined|>
   arrange(desc(MMRCD_distance)))
 ```
 
+If we lower the cutoff to the 95th percentile, sample 19, a Counterfeit observation also identified in the MMCD section, appears again (@Tbl_MMRCD_Outliers_2).
+
+```{r}
+#| label: Tbl_MMRCD_Outliers_2
+#| tbl-cap: "Observations lying above the cutoff point with $\\alpha=0.05$ and lower than $\\alpha=0.01$, alongside their descriptors, ordered by distance"
+
+outliers <- mrxdmb |> filter(distance > upper.quantiles[2]) |>
+  filter(distance < upper.quantiles[1])
+outliers.joined <- inner_join(whisky.data, outliers)
+
+outliers.joined <- rename(outliers.joined, MMRCD_distance = distance)
+
+pander(outliers.joined|>
+  arrange(desc(MMRCD_distance)))
+```
 #### Comparison between the distance estimates:
 
-Across all 3, the counterfeits are the samples with the greatest distance value.
-However, the regular Mahalanobis Distance with the sample mean and sample covariance matrix as it's estimators, only has 1 observation above the 99th percentile.
+Across all three methods, the Counterfeit observations have the greatest distance values.
+However, the regular Mahalanobis distance, using the sample mean and sample covariance matrix as its estimators, has only one observation above the 99th percentile.
 
-Compared to the Mahalanobis Distance with the MCD and MRCD estimators, we can see a much larger/more drastic difference between the counterfeit observations and the rest. 
+Compared with the Mahalanobis distance calculated using the MCD and MRCD estimators, there is a much larger and more pronounced separation between the Counterfeit observations and the rest of the data.
 
-My guess is that the grain sample doesn't appear in regular Mahalanobis because of how similar it is to the counterfeits? - the counterfeits are swamping any potential outliers.
+My interpretation is that the Grain sample does not appear as an outlier under the regular Mahalanobis calculation because of its similarity to the Counterfeit observations; the Counterfeit observations may be masking potential outliers by influencing the estimated mean and covariance.
 
 
 ### 8.2 Investigate unusual samples 
 
-Considering the distance that the counterfeit observations lie from the MCD estimated mean and covariance, there's enough evidence to indicate they're outliers for this distribution. It would be more interesting to look at the non-counterfeit samples, and why they might have such great distance scores (in particular sample no. 15, a Grain whisky, with a distance of 199).
+Considering the distance of the Counterfeit observations from the MCD-estimated mean and covariance, there is enough evidence to indicate that they are outliers relative to this distribution. It is therefore more interesting to examine the non-Counterfeit samples and why they might have such large distance scores, particularly sample 15, a Grain whisky, with a distance of 199.
 
-Maybe take into consideration how MCD affect samples with an unbalanced amount of classes - it shouldn't be affect by unbalanced class data, but need to find an actual source lmao
 
 **sample 15:** Grain - Grain unmatured
 
-- P: 0.042
-- S: 5.53
-- Cl: 0.113
-- K: 3.25
-- Ca: 1.35
-- Mn: 0.012
-- Fe: 0.076
-- Cu: 0.164
-- Zn: 0.046
-- Br: 0.01
-- Rb: 0.003
+For sample 15, the element concentrations are:
 
-the only value that looks to be particularly high or low is **Rb**???
+| Element | Concentration |
+|---|---:|
+| P | 0.042 |
+| S | 5.53 |
+| Cl | 0.113 |
+| K | 3.25 |
+| Ca | 1.35 |
+| Mn | 0.012 |
+| Fe | 0.076 |
+| Cu | 0.164 |
+| Zn | 0.046 |
+| Br | 0.01 |
+| Rb | 0.003 |
 
-**sample 20:** Island - Bunnahabhain
+: Element concentrations for sample 15 (Grain — Grain unmatured). {#tbl-sample15}
 
-- P: 2.24 - rather high
-- S: 7.54
-- Cl: 1.35 - rather high again
-- K: 36.2 - rather high again
-- Ca: 2.12 - a bit to the right
-- Mn: 0.051 
-- Fe: 0.184 - a bit to the right
-- Cu: 0.58
-- Zn: 0.057 - a bit ot the right
-- Br: 0.014
-- Rb: 0.037 - rather high again
+The only value that immediately looks particularly high or low is **Rb**.
 
+**Sample 20:** Island — Bunnahabhain
 
-comparing the values for the elements agains the histograms, it'd have such a great distance. **P**, **Sl**, **Rb** are in the tails of their respective histograms. While **Ca**, **Fe**, and **Zn** are slightly to the right - figure out better wording for this
+For sample 20, the element concentrations are:
 
-What's more interesting is that sample no. 15, which had a distance of roughly 4 times greater doesn't have any immediately discernible oddities when looking at the univariate histograms. Which goes to show the intresting qualities multivariate data can contain. It's also reflected in the PCA, where you can clearly see sample no. 15 creep into the Counterfeit samples' cluster.
+| Element | Concentration | Comment |
+|---|---:|---|
+| P | 2.24 | Rather high |
+| S | 7.54 | |
+| Cl | 1.35 | Rather high |
+| K | 36.2 | Rather high |
+| Ca | 2.12 | Slightly to the right |
+| Mn | 0.051 | |
+| Fe | 0.184 | Slightly to the right |
+| Cu | 0.58 | |
+| Zn | 0.057 | Slightly to the right |
+| Br | 0.014 | |
+| Rb | 0.037 | Rather high |
 
-**sample 29:** Speyside - Glennfiddich
-
-- P: 0.317
-- S: 2.72
-- Cl: 0.344
-- K: 12.4
-- Ca: 0.66
-- Mn: 0.029 - a bit to the right?
-- Fe: 0.132
-- Cu: 0.519
-- Zn: 0.193 - outer tail to the right
-- Br: 0.004
-- Rb: 0.013
-
-Similar to the grain outlier, it doesn't look too odd
-
-**sample 12:**
-
-- P; close to average
-- S; very high (not the highest tho)
-- Cl; definitly to the right tail, but not that out-there
-- K; close to average
-- Ca; relatively close to average
-- Mn; Not too sure...
-- Fe; Not too sure...
-- Cu; close-ish to average
-- Zn; again, not *too* out of the ordinary
-- Br; *veryy* high
-- Rb; super low
+: Element concentrations and observations for sample 20 (Island — Bunnahabhain). {#tbl-sample20}
 
 
-How does it compare to other counterfeit variables
+Comparing the element concentrations with the histograms helps explain why this observation has such a large distance. **P**, **S**, and **Rb** lie in the tails of their respective histograms, while **Ca**, **Fe**, and **Zn** are somewhat further to the right of the main concentration of observations.
+
+More interestingly, sample 15, which has a distance roughly four times greater, does not have any immediately discernible oddities when looking at the univariate histograms. This illustrates the interesting features that can emerge in multivariate data: an observation does not need to be extreme on any single variable to be unusual when the variables are considered jointly. This is also reflected in the PCA, where sample 15 can clearly be seen to move into the Counterfeit samples' cluster.
+
+**Sample 29:** Speyside — Glenfiddich
+
+For sample 29, the element concentrations are:
+
+| Element | Concentration | Comment |
+|---|---:|---|
+| P | 0.317 | |
+| S | 2.72 | |
+| Cl | 0.344 | |
+| K | 12.4 | |
+| Ca | 0.66 | |
+| Mn | 0.029 | Slightly to the right |
+| Fe | 0.132 | |
+| Cu | 0.519 | |
+| Zn | 0.193 | Outer tail to the right |
+| Br | 0.004 | |
+| Rb | 0.013 | |
+
+: Element concentrations and observations for sample 29 (Speyside — Glenfiddich). {#tbl-sample29}
+
+Similar to the Grain outlier, sample 29 does not look particularly unusual when the variables are considered individually.
 
 
 ### 8.3. Important distinction 
 
-@SHAND201714 claims there aren't any outliers.
+A sample can be different from the majority without necessarily being a statistical outlier.
 
-## Citations
+The original paper reported no outliers according to its Mahalanobis distance analysis (@SHAND201714).
 
-- https://www.sciencedirect.com/science/article/pii/S0022103117302123 - a more robust mahalanobis variant?
-"There are two types of detected outliers: those that are part of the original population (false positives) and those that come from a different population (true negatives)."
+Given the how distant the Counterfeit observations are when using the robust outlier, indicates that there might be evidence that they come from a different underlying distribution. This hypothesis is further strengthed by the PCA analysis in (**insert section**). But further analysis is needed before drawing any more of a conclusion.
 
-Minimum Covariance Determinant (MCD)
-computationally taxing - but with a dataset of only 32 observations it shouldn't be too bad
-
-
-- MAD: https://www.sciencedirect.com/science/article/pii/S0022103113000668?via%3Dihub - THE citation on MAD lol - issue with this is that it's univariate, according to wikipedia (https://en.wikipedia.org/wiki/Median_absolute_deviation) it can be generalized to multivariate data using geometric distributions, but I can't find any more info on that, wikipedia sites(https://crates.io/crates/rstats) as an implementation, that seems to be their own generalisation? - https://arxiv.org/pdf/2605.01312v2 might be something worth reading
-
--https://arxiv.org/pdf/1709.07045 - 
-"to avoid excessive noise it is however recommended that n > 5p, so that we have at least 5 observations per dimension. (When this condition is not satisfied one can instead use the MRCD method (11) described near the end of this article."
-oops....
-"For relatively small n the true
-distribution of the robust distances can be better approximated by an F -distribution, see15."
-
-- https://arxiv.org/abs/1701.07086
-
-- https://www.tandfonline.com/doi/epdf/10.1198/106186005X77685?needAccess=true
+Because sample 15, a Grain observation, has such a high distance, one of the two Grain observations must be an extreme observation from its own distribution. The Speyside and Island observations are not nearly as high as the others, and there is not enough information to conclude much beyond saying that they are very unusual.
