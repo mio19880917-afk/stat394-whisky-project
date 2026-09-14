@@ -120,7 +120,7 @@ To examine the elements together, we calculate squared Mahalanobis distances usi
 
 ```{r}
 #| label: Fig_Histogram_By_Element
-#| fig-cap: \"Histograms of the original-scale concentrations for each trace element.\"
+#| fig-cap: "Histograms of the original-scale concentrations for each trace element."
 #| fig-width: 12
 #| fig-height: 9
 
@@ -141,7 +141,7 @@ At a cursory glance, the histograms for all elements except Mn show a long right
 
 ```{r}
 #| label: Fig_QQ_By_Element
-#| fig-cap: \"Normal Q–Q plots of the original-scale concentrations for each trace element, grouped by descriptor.\"
+#| fig-cap: "Normal Q–Q plots of the original-scale concentrations for each trace element, grouped by descriptor."
 #| fig-width: 12
 #| fig-height: 9
 
@@ -172,7 +172,7 @@ whisky.long.log <- whisky.log|>
 
 ```{r}
 #| label: Fig_Histograms_By_Element_Log
-#| fig-cap: \"Histograms of the log-transformed concentrations for each trace element.\"
+#| fig-cap: "Histograms of the log-transformed concentrations for each trace element."
 #| fig-width: 12
 #| fig-height: 9
 
@@ -184,7 +184,7 @@ ggplot(whisky.long.log, aes(x = Concentration)) +
 
 ```{r}
 #| label: Fig_QQ_By_Element_Log
-#| fig-cap: \"Normal Q–Q plots of the log-transformed concentrations for each trace element, grouped by descriptor.\"
+#| fig-cap: "Normal Q–Q plots of the log-transformed concentrations for each trace element, grouped by descriptor."
 #| fig-width: 12
 #| fig-height: 9
 
@@ -212,7 +212,7 @@ The only tails that look particularly unusual are those for **Zn**. Island and C
 
 ```{r}
 #| label: Regular_Mahalanobis
-#| fig-cap: \"Normal Q–Q plot of squared Mahalanobis distances against the theoretical chi-square distribution with 11 degrees of freedom.\"
+#| fig-cap: "Normal Q–Q plot of squared Mahalanobis distances against the theoretical chi-square distribution with 11 degrees of freedom."
 
 p <- 11
 
@@ -277,7 +277,7 @@ Plotting the Mahalanobis distances calculated in Section 7.2.
 
 ```{r}
 #| label: Plotting_Mahalanobis_Againt_Chi_Squared
-#| fig-cap: \"Histogram of squared Mahalanobis distances with the chi-square reference density and 90%, 95%, and 99% cutoffs.\"
+#| fig-cap: "Histogram of squared Mahalanobis distances with the chi-square reference density and 90%, 95%, and 99% cutoffs."
 
 upper.quantiles <- qchisq(c(.9, .95, .99), df=p)
 density.at.quantiles <- dchisq(x=upper.quantiles, df=p)
@@ -318,9 +318,9 @@ pander(outliers.joined)
 
 While Mahalanobis distance is often used to identify outliers, @LEYS2018150 argues that the standard calculation is not robust because it uses the sample mean and covariance matrix. They instead propose a more robust approach based on the Minimum Covariance Determinant (MCD), which they refer to in the context of Mahalanobis distances as the Mahalanobis-Minimum Covariance Determinant (MMCD).
 
-Here, the MCD estimates the centre and covariance matrix using a subset of the observations chosen to give a robust estimate of the underlying distribution. This reduces the influence that potential outliers can have on the estimated centre and covariance.
+Here, the MCD estimates the center and covariance matrix using a subset of the observations chosen to give a robust estimate of the underlying distribution. This reduces the influence that potential outliers can have on the estimated center and covariance.
 
-The MMCD distances are calculated as follows, where $c_k$ is the cutoff point and $1-\alpha$ determines the tail probability used for the cutoff. The resulting distance is compared with this cutoff to identify observations that are unusually far from the robustly estimated centre.
+The MMCD distances are calculated as follows, where $c_k$ is the cutoff point and $1-\alpha$ determines the tail probability used for the cutoff. The resulting distance is compared with this cutoff to identify observations that are unusually far from the robustly estimated center.
 
 $$
 \sqrt{(X_i-\widehat\mu_{MCD})^T(\widehat\Sigma_{MCD})^{-1}(X_i-\widehat\mu_{MCD})}>c_k, c_k=\sqrt{\chi_{k;1-\alpha}^2}
@@ -332,7 +332,7 @@ In their conclusion, they suggest MCD75 when there is no reason to suspect more 
 
 ```{r}
 #| label: Plotting_MMCD_Againt_Chi_Squared
-#| fig-cap: \"Histogram of MMCD distances with the chi-square reference density and the $lpha=0.01$ cutoff.\"
+#| fig-cap: "Histogram of MMCD distances with the chi-square reference density and the $\\alpha=0.01$ cutoff."
 
 
 output75 <-cov.mcd(whisky.log[-(1:3)], quantile.used = nrow(whisky.log[-(1:3)])*.75)
@@ -390,7 +390,7 @@ pander(outliers.joined|>
 
 ```{r}
 #| label: Plotting_MMRCD_Againt_Chi_Squared
-#| fig-cap: \"Histogram of MRCD-based distances with the chi-square reference density and the selected cutoffs.\"
+#| fig-cap: "Histogram of MRCD-based distances with the chi-square reference density and the selected cutoffs."
 
 out <-CovMrcd(whisky.log[-(1:3)], alpha = .75)
 mrxdmb <-mahalanobis(whisky.log[-(1:3)], out$center, out$cov)
