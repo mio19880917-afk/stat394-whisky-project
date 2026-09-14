@@ -1,7 +1,15 @@
 ---
 title: "Normal/Mahalanobis and Outliers"
 format: html
-bibliography: [citations/RobustMahalanobis.bib, citations/ShandEtAl.bib]
+bibliography: [
+  citations/RobustMahalanobis.bib, 
+  citations/ShandEtAl.bib,
+  citations/MAD.bib,
+  citations/MADDepth.bib,
+  citations/MCDExtensions.bib,
+  citations/MRCD.bib,
+  citations/RobustEstDist.bib,
+  citations/whisky.bib]
 ---
 
 ```{r}
@@ -212,6 +220,7 @@ dM$Sample_no <- whisky.data$Sample_no
 myplot <- ggplot(dM, aes(sample=distance)) +
   stat_qq(mapping = aes(colour = Descriptor), size= 1, 
           distribution = stats::qchisq, dparams=list(df=p)) + 
+  scale_colour_manual(values = descriptor_colours) + 
   stat_qq_line(distribution = stats::qchisq, dparams = list(df=p)) +
   ylim(c(3,27)) # so that the sample number appears correctly
 
@@ -228,6 +237,8 @@ myplot +
 
 #### Anderson Darling Test
 
+Performing and Anderson-Darling test for Multivariate Normality on the log-transformed data set, gives a test statistic of 0.2871985, and a corresponding p-value of 0.9561044. The null hypothesis isn't rejected.
+
 ```{r}
 ad_test <- AD.test(whisky.log[-(1:3)])
 ad_test
@@ -236,18 +247,17 @@ ad_test
 
 ### 7.3. Conclusion 
 
-Multivariate normality is approximately reasonable but imperfect after log-transforming the original data.
+After log-transforming the original data, multivariate normality is approximately reasonable but imperfect.
 
-why?
+Why?
+- anderson darling test
+- evidence that counterfeit samples might come from a different distribution.
+- individual Q-Q plot and Histograms look good
+- mahalanobis distance Q-Q plot looks good
 
 ## 8. Surprising Observations 
 
 Are there surprising observations?
-
-look at other methods for outliers?
-- Z-Score Method
-- IQR
-- MAD - mentioned in lectures, so might be worthwhile?
 
 ### 8.1. Looking for Outliers 
 
@@ -276,22 +286,18 @@ There seems to be observation above the $99\%$ cut-off point.
 
 ```{r}
 
-outliers <- dM |> 
-  slice_max(distance, n=5) |>
-  arrange(desc(distance))
+outliers <- dM |>
+  slice_max(distance, n=8, with_ties=TRUE)
 
-outliers.joined <- whisky.data |> filter(Sample_no %in% outliers$Sample_no)
-outliers.joined$dM_distance <- outliers$distance
+outliers.joined <- inner_join(whisky.data, outliers)
+outliers.joined <- outliers.joined |> arrange(desc(distance))
 pander(outliers.joined)
 ```
 
-```{r}
-pander(whisky.data |> filter(Sample_no %in% (dM |> slice_max(distance, n=5))$Sample_no))
-```
 
 #### MAD
 
-original article only for univariate cases
+original article only for univariate cases - although have seen generalization to multivariate data using geometric distribution from an R Cargo package. The package doesn't cite any sources, so I'm not sure authenticity of it - plus I can't find any other articles/paper about it.
 
 #### Mahalanobis-Minimum Covariance Determinant
 
@@ -305,7 +311,11 @@ $$
 \sqrt{(X_i-\widehat\mu_{MCD})^T(\widehat\Sigma_{MCD})^{-1}(X_i-\widehat\mu_{MCD})}>c_k, c_k=\sqrt{\chi_{k;1-\alpha}^2}
 $$
 
-@LEYS2018150 gives 2 ways of calculating the MCP in R, "MCP50", and "MCP75". In their conclusion they suggest MCD75 if there isn't a reason to suspect more than 25% outliers, especially for smaller samples. Flowing their advice, the mahalanobis distances for this data is,
+@LEYS2018150 gives 2 ways of calculating the MCP in R, "MCP50", and "MCP75".
+
+**insert what MCPxx is ($1-\alpha$)**
+
+In their conclusion they suggest MCD75 if there isn't a reason to suspect more than 25% outliers, especially for smaller samples. Flowing their advice, the mahalanobis distances for this data is,
 
 ```{r}
 output75 <-cov.mcd(whisky.log[-(1:3)], quantile.used = nrow(whisky.log[-(1:3)])*.75)
@@ -342,17 +352,26 @@ The results speak for themselves. Counterfeit is clearly distant from the rest o
 #| label: Tbl_MMCD_Outliers
 #| tbl-cap: "Observations lying above the cutoff point with $\\alpha=0.01$, alongside their descriptors, ordered by distance"
 
-outliers <- mhmcd75 |> filter(distance > upper.quantiles[1])|>
-  arrange(desc(distance))
+outliers <- mhmcd75 |> filter(distance > upper.quantiles[1])
 outliers.joined <- whisky.data |> filter(Sample_no %in% outliers$Sample_no)
 outliers.joined$MMCD_distance <- outliers$distance
-pander(outliers.joined)
+pander(outliers.joined|>
+  arrange(desc(MMCD_distance)))
 ```
+
 #### MRCD
+
+"to avoid excessive noise it is however recommended that n > 5p, so that we have at least 5 observations per dimension. (When this condition is not satisfied one can instead use the MRCD method" - @Hubert_2017
+
+```{r}
+32 - (32*.75)
+```
+
+"Typically one sets $h = ⌈0.75n⌉$ to get a better efficiency." @Boudt_2019. **maybe move this up **
 
 ```{r}
 set.seed(1234567890)
-out <-CovMcd(whisky.log[-(1:3)], alpha = .75, seed = .Random.seed)
+out <-CovMrcd(whisky.log[-(1:3)], alpha = .75)
 mrxdmb <-mahalanobis(whisky.log[-(1:3)], out$center, out$cov)
 
 mrxdmb <- as.data.frame(mrxdmb)
@@ -363,7 +382,7 @@ mrxdmb$Sample_no <- whisky.data$Sample_no
 # cutoff
 alpha <-.01
 
-upper.quantiles <- qchisq(c(1-alpha), df=p)
+upper.quantiles <- qchisq(c(1-alpha, .95), df=p)
 density.at.quantiles <- dchisq(x=upper.quantiles, df=p)
 cut.points <- data.frame(upper.quantiles, density.at.quantiles)
 
@@ -374,24 +393,34 @@ ggplot(mrxdmb, aes(x=distance)) +
 				  col="blue", linewidth=1, alpha=.9, xlim=c(-5,40)) +
 	geom_segment(data=cut.points,
 				 aes(x=upper.quantiles, xend=upper.quantiles,
-					 y=rep(0,1), yend=density.at.quantiles),
+					 y=rep(0,2), yend=density.at.quantiles),
 				 col="red", linewidth=1) +
 	xlab(TeX("MMCD distances and cutpoint at $\\alpha=.01$")) +
 	ylab("Histogram and density")
 ```
 ```{r}
-outliers <- mrxdmb |> filter(distance > upper.quantiles[1])|>
-  arrange(desc(distance))
+outliers <- mrxdmb |> filter(distance > upper.quantiles[2]) 
 outliers.joined <- whisky.data |> filter(Sample_no %in% outliers$Sample_no)
 outliers.joined$MMRCD_distance <- outliers$distance
-pander(outliers.joined)
+pander(outliers.joined|>
+  arrange(desc(MMRCD_distance)))
 ```
+
+#### Comparison between the distance estimates:
+
+Across all 3, the counterfeits are the samples with the greatest distance value.
+However, the regular Mahalanobis Distance with the sample mean and sample covariance matrix as it's estimators, only has 1 observation above the 99th percentile.
+
+Compared to the Mahalanobis Distance with the MCD and MRCD estimators, we can see a much larger/more drastic difference between the counterfeit observations and the rest. 
+
+My guess is that the grain sample doesn't appear in regular Mahalanobis because of how similar it is to the counterfeits? - the counterfeits are swamping any potential outliers.
+
 
 ### 8.2 Investigate unusual samples 
 
 Considering the distance that the counterfeit observations lie from the MCD estimated mean and covariance, there's enough evidence to indicate they're outliers for this distribution. It would be more interesting to look at the non-counterfeit samples, and why they might have such great distance scores (in particular sample no. 15, a Grain whisky, with a distance of 199).
 
-Maybe take into consideration how MCD affect samples with an unbalanced amount of classes
+Maybe take into consideration how MCD affect samples with an unbalanced amount of classes - it shouldn't be affect by unbalanced class data, but need to find an actual source lmao
 
 **sample 15:** Grain - Grain unmatured
 
