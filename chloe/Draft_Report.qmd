@@ -1,0 +1,313 @@
+---
+title: "Multivariate Analysis of Scotch Whisky Components"
+format: pdf
+editor: visual
+---
+
+To Cover: - A high-level description of the study and its motivation. - A quantitative descriptive analysis of the data. - A graphical/qualitative analysis of the data. - Can you assume that the data follow a multivariate normal distribution? - no - Are there “surprising” observations? You must try to answer the question (with a proper discussion): Is the cluster analysis consistent with different distances and linkages?
+
+## A Qualitative Analysis of Data
+
+```{r}
+#| label: load-packages
+#| include: false
+  
+library(tidyverse)
+library(ggplot2)
+library(ggcorrplot)
+library(gridExtra)
+library(reshape2)
+library(dplyr)
+```
+
+### Prepping data:
+
+```{r}
+whiskey.data <- read.csv("../whisky_trace_elements.csv", header=TRUE)
+
+handle_lod <- function(column) {
+  for (i in 1:length(column)) {
+    val = column[i]
+    if (grepl('<', val)) {
+      new_val = as.double(sub("<","",val)) / 2.
+      column[i] = new_val
+    }
+    column[i] = as.double(column[i])
+  }
+  return(column)
+}
+
+## handling lod's like the paper does
+whiskey.data$P <- as.double(handle_lod(whiskey.data$P))
+whiskey.data$Cl <- as.double(handle_lod(whiskey.data$Cl))
+whiskey.data$Br <- as.double(handle_lod(whiskey.data$Br))
+whiskey.data$Rb <- as.double(handle_lod(whiskey.data$Rb))
+
+whiskey.data <- whiskey.data[, -1] # drop the sample no - technically implicitely exists cause indexing
+
+whiskey.data$Descriptor <- as.factor(whiskey.data$Descriptor)
+whiskey.data$Distillery <- as.factor(whiskey.data$Distillery)
+whiskey.data <- as.data.frame(whiskey.data)
+
+```
+
+```{r}
+whiskey.num <- whiskey.data[,-(1:2)] #dropping factors 
+summary(whiskey.data[,-(1:2)])
+```
+
+Notes about data: - All values are above 0 - They aren't all in the same order of magnitude range, .e.g, Br is smaller than P.
+
+### Plotting:
+
+```{r}
+# function for getting plots, so that I don't have to rewrite it :)
+get.ggcorrplot <- function(data, title){
+  plot <- ggcorrplot(data,
+    method = "circle",
+    hc.order = TRUE,
+    type = "lower",
+    title = title
+    )
+  plot
+}
+```
+
+First looking at box plots of elements across Descriptor:
+
+```{r}
+whiskey.melt <- melt(whiskey.data[,-2], 
+                     id.vars="Descriptor", 
+                     variable.name = "Element")
+max.across.all <- max(whiskey.melt$value)
+uniq.desc <- unique(whiskey.data$Descriptor)
+
+subsect.1.melt <- subset(whiskey.melt, Descriptor %in% c("Blend","Counterfeit","Grain"))
+subsect.2.melt <- subset(whiskey.melt, Descriptor %in% c("Highland","Island","Lowland"))
+subsect.3.melt <- subset(whiskey.melt, Descriptor == "Speyside")
+
+get.boxplots <- function(data){
+  ggplot(data=data, aes(x=Element, y=value)) +
+    geom_boxplot(aes(col=Element), notch = F) +
+    facet_grid(~ Descriptor) +
+    ylab("Trace Amount") +
+    ylim(0, max.across.all + max.across.all/20.) +
+    theme(axis.text.x = element_text(size=7, angle=90, hjust=1),
+    legend.position = "none")
+}
+
+plots <- lapply(1:7, function(i) {
+  get.boxplots(subset(whiskey.melt, Descriptor == uniq.desc[i]))
+})
+#row.1 <- get.boxplots(subsect.1.melt)
+#row.2 <- get.boxplots(subsect.2.melt)
+#row.3 <- get.boxplots(subsect.3.melt)
+#test <- c(row.1, row.2, row.3)
+#grid.arrange(grobs = plots, nrow = 3, heights=rep(4,3), widths=rep(2,3))
+#grid.arrange(grobs = plots, layout_matrix = matrix(c(rep(1:3,3), rep(4:6, 3), rep(7:9, 3)), ncol = 3, byrow=T))
+```
+
+```{r}
+get.boxplots(subsect.1.melt)
+get.boxplots(subsect.2.melt)
+get.boxplots(subsect.3.melt)
+```
+
+Looking at the boxplots there seem to be some differences. Counterfeit stans out a lot because of the hiigh amount of S it has. Island stands out for K's variance.
+
+As the sample size is tiny, any attempt at adding notches causes it to go outside the range of the hinges (outside of the IQR). For an example:
+
+```{r}
+ggplot(data=subsect.3.melt, aes(x=Element, y=value)) +
+  geom_boxplot(aes(col=Element), notch = T) +
+  facet_grid(~ Descriptor) +
+  ylab("Trace Amount") +
+  theme(axis.text.x = element_text(size=7, angle=90, hjust=1),
+  legend.position = "none")
+```
+
+```{r}
+get.ggcorrplot(cor(whiskey.data[,-(1:2)]), "Correlation Across all Classes")
+```
+
+```{r}
+counterfit.corrplot <- get.ggcorrplot(cor(subset(whiskey.data, Descriptor=="Counterfeit")[,-(1:2)]), "Correlation for Counterfeit Whiskey")
+
+non.counterfit.corrplot <- get.ggcorrplot(cor(subset(whiskey.data, Descriptor!="Counterfeit")[,-(1:2)]), "Correlation for Non-Counterfeit Whiskey")
+
+grid.arrange(counterfit.corrplot, non.counterfit.corrplot, ncol=2)
+```
+
+There's a clear indicator for some difference with a lot more negative correlations for the counterfeit whiskeys compared to the others.
+
+**Want to check next for:** - Look at how it differs if filtering for specific descriptors. - Outliers? (or odd looking measurements) - proper understanding of how to deal with those '\<xyz' measurements - have ggcorrplot maintain label ordering for easier comparing...
+
+### Mahalanobis:
+
+```{r}
+cov(whiskey.num)
+```
+
+```{r}
+p <- 11
+dM <- mahalanobis(whiskey.data[-(1:2)], center=colMeans(whiskey.data[-(1:2)]), cov=cov(whiskey.data[-(1:2)]))
+
+upper.quantiles <- qchisq(c(.9, .95, .99), df=p)
+density.at.quantiles <- dchisq(x=upper.quantiles, df=p)
+cut.points <- data.frame(upper.quantiles, density.at.quantiles)
+
+ggplot(data.frame(dM), aes(x=dM)) +
+	geom_histogram(aes(y=after_stat(density)), bins=8,
+				   fill="white", col="black") +
+	geom_rug() +
+	stat_function(fun=dchisq, args = list(df=p),
+				  col="red", size=2, alpha=.7, xlim=c(-5,40)) +
+	geom_segment(data=cut.points,
+				 aes(x=upper.quantiles, xend=upper.quantiles,
+					 y=rep(0,3), yend=density.at.quantiles),
+				 col="blue", size=2) +
+	xlab("Mahalanobis distances and cut points") +
+	ylab("Histogram and density")
+```
+
+### PCA
+
+```{r}
+whiskey.log <- whiskey.data |> mutate(across(where(is.numeric), log))
+whiskey.stand <- whiskey.log |> mutate(across(where(is.numeric), ~(scale(.) %>% as.vector)))
+
+#ggplot(whiskey.stand, aes(x=Zn)) +
+#  geom_histogram(bins=30, fill="white", col="black")
+
+#summary(whiskey.stand)
+
+
+
+(Sigma <- cov(whiskey.stand[3:13]))
+eigen(Sigma)
+pca <- as.matrix(whiskey.stand[3:13]) %*% eigen(Sigma)$vectors
+```
+
+```{r}
+pca <- as.data.frame(pca)
+pca$Descriptor <- whiskey.data$Descriptor
+summary(pca)
+
+ggplot(pca, aes(x=V1,y=V2, color=factor(Descriptor)))+
+  geom_point(size=1)
+```
+
+```{r}
+#whiskey.stand$Descriptor <- whiskey.data$Descriptor
+#whiskey.stand.melt <- melt(whiskey.stand, 
+#                           id.vars="Descriptor", 
+#                           variable.name = "Element")
+#whiskey.stand.melt
+
+#ggplot(whiskey.stand.melt, aes(x=value))+
+#  geom_histogram(bins=nclass.FD(whiskey.stand.melt$value))+
+#  geom_rug()
+```
+
+Looks closer to a poison or chi squared?
+
+## Normal Assumptions
+
+```{r}
+plot_norm_est <- function(data, parameter, t) {
+  ggplot(data) +
+    geom_histogram(mapping = aes(x = parameter, y=..density..), fill="steelblue", colour="black", bins = nclass.FD(parameter)) +
+    stat_function(fun=dnorm, args= list(mean=0, sd=1), xlim=c(-4, 4)) + 
+    ggtitle(t)
+}
+
+plot_norm_est(whiskey.stand, whiskey.stand$P, "P")
+plot_norm_est(whiskey.stand, whiskey.stand$S, "S")
+plot_norm_est(whiskey.stand, whiskey.stand$Cl, "Cl")
+plot_norm_est(whiskey.stand, whiskey.stand$K, "K")
+plot_norm_est(whiskey.stand, whiskey.stand$Ca, "Ca")
+plot_norm_est(whiskey.stand, whiskey.stand$Mn, "Mn")
+plot_norm_est(whiskey.stand, whiskey.stand$Fe, "Fe")
+plot_norm_est(whiskey.stand, whiskey.stand$Cu, "Cu")
+plot_norm_est(whiskey.stand, whiskey.stand$Zn, "Zn")
+plot_norm_est(whiskey.stand, whiskey.stand$Br, "Br")
+plot_norm_est(whiskey.stand, whiskey.stand$Rb, "Rb")
+
+```
+
+Hardly any of these look normal
+
+```{r}
+plot.qq <- function(data, parameter, title) {
+  ggplot(data, aes(sample=parameter)) +
+    stat_qq(mapping = aes(colour = Descriptor)) + stat_qq_line()+
+    ggtitle(paste("Normal QQ Plot for", title, sep=" "))
+}
+plot.qq(whiskey.stand, whiskey.stand$P, "P")
+plot.qq(whiskey.stand, whiskey.stand$S, "S")
+plot.qq(whiskey.stand, whiskey.stand$Cl, "Cl")
+plot.qq(whiskey.stand, whiskey.stand$K, "K")
+plot.qq(whiskey.stand, whiskey.stand$Ca, "Ca")
+plot.qq(whiskey.stand, whiskey.stand$Mn, "Mn")
+plot.qq(whiskey.stand, whiskey.stand$Fe, "Fe")
+plot.qq(whiskey.stand, whiskey.stand$Cu, "Cu")
+plot.qq(whiskey.stand, whiskey.stand$Zn, "Zn")
+plot.qq(whiskey.stand, whiskey.stand$Br, "Br")
+plot.qq(whiskey.stand, whiskey.stand$Rb, "Rb")
+
+```
+
+Again, all of these look skewed to the right. Fe looks the closest
+
+Interestingly you can make out the counterfeits seem to be the strange observations in S.
+
+## New Conclusion About normality
+
+After actually reading the paper they mention log transforming the data. Doing that makes the distributions look normal T-T lol PCA also looks like what they got
+
+## Classifiying by distance
+
+```{r}
+library(dplyr)
+p <- 11
+whiskey.log.counter <- whiskey.log |> filter(Descriptor == "Counterfeit")
+whiskey.log.no.counter <- whiskey.log |> filter(Descriptor != "Counterfeit")
+qr(whiskey.log.counter[-(1:2)])$rank
+#dM.counter <- mahalanobis(whiskey.log.counter[-(1:2)], center=colMeans(whiskey.log.counter[-(1:2)]), cov=cov(whiskey.log.counter[-(1:2)]))
+#dM.non.counter <- mahalanobis(whiskey.log.no.counter[-(1:2)], center=colMeans(whiskey.log.no.counter[-(1:2)]), cov=cov(whiskey.log.no.counter[-(1:2)]))
+```
+
+Can't call the above code because counter has less observation than parameters, so trying with first 2 pca components
+
+```{r}
+pca.counter <- pca |> filter(Descriptor == "Counterfeit")
+pca.no.counter <- pca |> filter(Descriptor != "Counterfeit")
+
+X1 <- pca.counter[(1:2)]
+X2 <- pca.no.counter[(1:2)]
+p <- 2
+
+dM.counter <- mahalanobis(X1, center=colMeans(X1), cov=cov(X1))
+dM.non.counter <- mahalanobis(X1, center=colMeans(X2), cov=cov(X2))
+```
+
+Comparing counterfeit observations to models
+
+```{r}
+pchisq(dM.counter, df=p, lower.tail=FALSE)
+pchisq(dM.non.counter, df=p, lower.tail=FALSE)
+```
+
+All counterfeit observations are closer to a a multivariate normal with just counterfeits compared to multivariate normal without counterfeit obsevations.
+
+```{r}
+dM.counter <- mahalanobis(X2, center=colMeans(X1), cov=cov(X1))
+dM.non.counter <- mahalanobis(X2, center=colMeans(X2), cov=cov(X2))
+counter <- pchisq(dM.counter, df=p, lower.tail=FALSE)
+non.counter <- pchisq(dM.non.counter, df=p, lower.tail=FALSE)
+data.frame(counter, non.counter, non.counter > counter)
+```
+
+All non-counterfeit ones get correctly classified by distance
+
+TODO NEXT: - drop the value i'm test....
