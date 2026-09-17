@@ -1,0 +1,1220 @@
+---
+title: "Multivariate Analysis of Scotch Whisky Components"
+author:
+  - "Nate Bradbury"
+  - "Chloe Barnarde"
+  - "Mio Hamada"
+  - "June Doyle"
+format: pdf
+keep-tex: true
+editor: visual
+bibliography: [
+  citations/AssessmentOfAuthenticityOfWhiskySamples.bib,
+  citations/IntellectualPropertyCrimeThreatAssessment.bib,
+  citations/ShandEtAl.bib,
+  citations/WorldwideIllicitAndCounterfeitAlcoholicSpirits.bib,
+  citations/frery-cluster.bib
+]
+---
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+#master set up
+library(ggplot2)
+library(ggcorrplot)
+library(dplyr)
+library(tidyr)
+
+whisky.data <- read.csv(
+  '../whisky_trace_elements.csv',
+  header = TRUE #tell that first row of csv contains the variable names
+  )
+
+# remove blank rows
+whisky.data = whisky.data[ 
+  !is.na(whisky.data$Sample_no) & #keeps rows where Sample_no is not missing
+    trimws(as.character(whisky.data$Sample_no)) != "", # also remove rows where Sample_no is just an empty string
+]
+
+#create a function for dealing with values below the limits of detection
+handle_lod <- function(column) { 
+  below_lod <- grepl("<", column) #identify which values contain the "<" symbol
+                                  #TRUE means the measurement was below the detection limit
+  column <- as.numeric(sub("<", "", column)) #Remove the "<" symbol from the values
+                                             #then convert the whole column from text to numeric values
+  column[below_lod] <- column[below_lod] / 2 #for measurements below the detection limit, replace the                                                  reported limit with half of that values
+  return(column)
+}
+
+#Then apply the detection limit function to elements
+# / apply the LOD treatemnet 
+whisky.data$P <- handle_lod(whisky.data$P)
+whisky.data$Cl <- handle_lod(whisky.data$Cl)
+whisky.data$Br <- handle_lod(whisky.data$Br)
+whisky.data$Rb <- handle_lod(whisky.data$Rb)
+
+
+# the 11 trace elements
+elements <- whisky.data[, c("P", "S", "Cl", "K", "Ca", "Mn", "Fe", "Cu", "Zn", "Br", "Rb")]
+element.names <- names(elements)
+
+#take the base 10 logarithm of every elemental concentration
+whisky.log <- log10(elements)
+
+#standardize every log transformed element
+whisky.std <- scale(whisky.log)
+
+#counterfeit vs non counterfeit goruping 
+whisky.data$Group <- ifelse(
+  whisky.data$Descriptor == "Counterfeit",
+  "Counterfeit",
+  "Non-Counterfeit"
+)
+
+whisky.data$Descriptor <- as.factor(whisky.data$Descriptor)
+whisky.data$Distillery <- as.factor(whisky.data$Distillery)
+
+# Aliases so Chloe's existing code still works
+log.elements <- whisky.log
+stand.elements <- whisky.std
+
+#plot settings used later
+
+
+theme_set(
+  theme_bw(
+    base_size = 12,
+    base_family = "sans"
+  ) +
+    theme(
+      panel.grid.major = element_line(colour = "grey85"),
+      panel.grid.minor = element_blank(),
+      legend.position = "bottom"
+    )
+)
+
+descriptor_colours <- c(
+  "Blend"       = "#E41A1C",
+  "Counterfeit" = "#377EB8",
+  "Grain"       = "#4DAF4A",
+  "Highland"    = "#984EA3",
+  "Island"      = "#FF7F00",
+  "Lowland"     = "#A65628",
+  "Speyside"    = "#F781BF"
+)
+
+descriptor_shapes <- c(
+  "Blend"       = 16,
+  "Counterfeit" = 17,
+  "Grain"       = 15,
+  "Highland"    = 18,
+  "Island"      = 3,
+  "Lowland"     = 7,
+  "Speyside"    = 8
+)
+
+## Want some kinda colours for bar/histograms
+
+histo.col.1 <- "#6ea81c" 
+histo.col.2 <- "#c444b3"
+histo.outline <- "#4f4f4f"
+
+
+# Summarise sample membership.
+summarise.membership <- function(groups) {
+  members <- split(whisky.data$Sample_no, groups)
+
+  data.frame(
+    Cluster = names(members),
+    Size = lengths(members),
+    Samples = vapply(
+      members,
+      function(x) paste(x, collapse = ", "),
+      character(1)
+    )
+  )
+}
+
+type.code <- c(
+  Blend = "BL",
+  Counterfeit = "CF",
+  Grain = "GR",
+  Highland = "HI",
+  Island = "IS",
+  Lowland = "LO",
+  Speyside = "SP"
+)
+
+
+sample.labels <- paste0(
+  whisky.data$Sample_no,
+  type.code[as.character(whisky.data$Descriptor)]
+)
+```
+
+# Abstract
+
+Counterfeit Scotch whisky poses significant economic and public health concerns, driving the need for reliable methods of distinguishing counterfeit from non-counterfeit whiskies. This report investigates whether the elemental composition of Scotch whisky provides useful information for differentiating whisky samples by identifying similarities among known counterfeits. We analysed trace-element concentrations from 32 whisky samples, which included five known counterfeits, through descriptive and graphical analysis, principal component analysis (PCA), and hierarchical cluster analysis. Log transformation and standardisation were applied to our data prior to multivariate analyses.
+
+Counterfeit samples were shown to have differences in concentration of several elements compared to non-counterfeit samples. PCA revealed some separation between counterfeit and non-counterfeit samples. Hierarchical clustering then uncovered a recurring pattern in the grouping of counterfeit samples, although exact grouping depended on the distance measure, linkage method and number of clusters. Counterfeit sample 12 was identified as a surprising, unusual multivariate observation as it was the only sample with a squared Mahalanobis distance exceeding the 99% cut-off, while non-counterfeit sample 15 was frequently grouped with, or in close proximity to, the counterfeit samples.
+
+Results suggest that trace-element concentrations measured using TXRF are useful in differentiating between counterfeit and non-counterfeit whisky samples, although clustering alone does not provide a definitive answer to a sample's authenticity.
+
+# Introduction
+
+## 1.1 Background and motivation
+
+Scotch whisky is an economically important product and represents a significant export industry for the United Kingdom [@SHAND201714]. Its international popularity and high economic value, however, also make it an attractive target for counterfeiting. The consequences of counterfeit Scotch whisky extend beyond financial losses for producers and consumers; counterfeit goods are "often produced in settings with inadequate hygiene, using substandard and even harmful ingredients" [@doi/10.2814/830719] and so a counterfeit spirirt that is contaminated, poisoned, or improperly distilled may pose a severe public health risk to consumers [@Bryan02072024; @foods11182810].
+
+Existing authentication methods can require expensive equipment and specialized operators [@SHAND201714]. Trace element concentrations provide a possible chemical fingerprint, and total reflection X-ray fluorescence (TXRF) can measure several elements from small whisky samples. @SHAND201714 investigated whether trace element profiles could distinguish whisky samples and reported clear multivariate separation of the counterfeit samples in their principal component analysis. The findings of @SHAND201714 provide motivation for further exploration into whether known counterfeit samples exhibit similarities in their trace-element profiles and whether these similarities persist under different methods of multivariate analysis.
+
+## 1.2 Aim
+
+The aims of this report are to describe the multivariate structure of the whisky data, examine relationships among trace elements, assess whether multivariate normality is a reasonable approximation, identify surprising observations, investigate the clustering of whisky samples, and determine whether clustering conclusions are consistent across different distance measures and linkage methods.
+
+## 1.3 Main research question
+
+The main research question is: Are the conclusions of the cluster analysis consistent across different distance measures and linkage methods?
+
+The main substantive comparison is between counterfeit and non-counterfeit whisky, with particular interest in whether known counterfeit samples share similar trace-element profiles and consistently group together. Regional categories are retained only as sample descriptors and are not treated as the main focus of the analysis.
+
+# Data
+
+## 2.1 Observations
+
+The dataset contains 32 whisky samples. Twenty-five samples were obtained from reputable sources, five were known counterfeits, and two were grain whiskies. Only five samples are counterfeit, so any comparison involving counterfeit status should be interpreted with appropriate caution because of the unequal group sizes.
+
+## 2.2 Variables
+
+The eleven measured variables are concentrations of P, S, Cl, K, Ca, Mn, Fe, Cu, Zn, Br and Rb, recorded in mg/L.
+
+# Methods
+
+## 3.1 Data preparation
+
+Values below the limit of detection occurred for P, Cl, Br and Rb. These values were replaced with half the reported detection limit. The eleven elemental concentrations were then log transformed using base 10 logarithms in order to reduce positive skewness and compress large differences in concentration.
+
+For cluster analysis, each log-transformed element was also standardised to mean zero and standard deviation one. This placed all elements on a comparable scale and prevented elements with larger numerical variation from dominating the distance calculations.
+
+## 3.2 Quantitative descriptive analysis
+
+For each trace element, the mean, median, standard deviation, interquartile range, minimum and maximum were calculated. Counterfeit and non-counterfeit samples were also compared using geometric means because elemental concentrations are positive and strongly right skewed on their original scale.
+
+## 3.3 Graphical and multivariate analysis
+
+Raw and log-transformed density plots were used to assess distributional shape and skewness. Boxplots of standardised log concentrations were subsequently used to compare counterfeit and non-counterfeit samples. Pearson correlations were calculated from the log-transformed concentrations. Principal component analysis was then applied to the eleven log-transformed elements after centering and scaling, allowing the main directions of multivariate variation to be displayed in two dimensions.
+
+## 3.4 Assessment of normality
+
+Marginal normality was assessed using histograms and normal Q-Q plots for each element before and after log transformation. Multivariate normality was assessed using a chi-squared Q-Q plot of squared Mahalanobis distances and an Anderson-Darling multivariate normality test. Because the mean vector and covariance matrix are estimated from the same sample, the chi-squared comparison is treated as an approximate reference rather than a definitive test.
+
+## 3.5 Surprising observations
+
+Squared Mahalanobis distance was used to measure how far each observation lies from the multivariate centre while accounting for covariance between the elements. Distances were compared with the 90%, 95% and 99% quantiles of a chi-squared distribution with eleven degrees of freedom. Observations with unusually large distances were investigated using their individual element concentrations and standardised log concentrations.
+
+## 3.6 Hierarchical cluster analysis
+
+The clustering analysis used all eleven standardised log transformed elements. Whisky category labels were not used to form clusters; they were used only afterwards to interpret the resulting groups.
+
+### 3.6.1 Initial clustering specification
+
+We began with hierarchical clustering using Euclidean distance and complete linkage. Complete linkage defines the distance between two clusters as the largest distance between their members, taking one sample from each cluster.
+
+Cuts from two to six clusters were compared using mean silhouette width. This measure compares each sample’s average distance within its own cluster with the smallest average distance to another cluster. Scores were calculated using the clustering distances and averaged across all 32 samples, with singleton clusters assigned zero. Higher scores indicate closer grouping within clusters and better separation between them.
+
+The three and four cluster cuts had the two highest mean scores. Both were examined to assess how the additional cluster changed the main counterfeit-related group.
+
+### 3.6.2 Distance Measures
+
+To assess sensitivity to the choice of distance measure, complete linkage was held fixed while Euclidean, Manhattan, maximum and correlation dissimilarity were compared. Correlation dissimilarity was defined as $d=(1-r)/2$\$d=(1-r)/2\$, where $r$ is the Pearson correlation between two standardised sample profiles. Cluster membership was compared at three and four clusters.
+
+### 3.6.3 Linkage methods
+
+To assess sensitivity to linkage, Euclidean distance was held fixed while single, complete and average linkage were compared. Each dendrogram was cut into three clusters so that membership could be compared at the same level.
+
+# Results
+
+## 4.1 Descriptive results
+
+```{r}
+#| label: tbl-summary-statistics
+#| tbl-cap: "Summary statistics for the eleven trace element concentrations."
+#| echo: false
+
+summary.stats  <- data.frame(
+  Element = names(elements),
+  Mean = sapply(elements, mean),
+  Median = sapply(elements, median),
+  SD = sapply(elements, sd),
+  IQR = sapply(elements, IQR),
+  Min = sapply(elements, min),
+  Max = sapply(elements, max)
+)
+
+knitr::kable(summary.stats, digits = 4, row.names = FALSE)
+```
+
+Potassium had the largest mean concentration at approximately 10.26 mg/L, followed by sulfur at 5.02 mg/L and calcium at 1.19 mg/L. Bromine and rubidium occurred at the lowest concentrations, with mean values below 0.01 mg/L. Potassium and sulfur also had the largest absolute standard deviations, although direct comparison of standard deviations should be interpreted cautiously because the elements are measured on very different concentration scales.
+
+For most elements, the mean exceeded the median, particularly for P, S, K, Cu, Zn, and Br. This indicates positive skewness and is consistent with a small number of relatively large concentrations pulling the mean upwards. The large maxima for S, K, and Br provide further evidence of long right tails. These descriptive results support the use of a logarithmic transformation before subsequent multivariate analysis.
+
+## 4.2 Counterfeit and non-counterfeit comparison
+
+```{r}
+#| label: tbl-authenticity-meaures
+#| tbl-cap: "Geometric mean element concentrations for counterfeit and non counterfeit samples."
+#| echo: false
+
+geo_mean <- function(x) exp(mean(log(x)))
+
+authenticity.summary <- aggregate(
+  elements,
+  by = list(Group = whisky.data$Group),
+  FUN = geo_mean
+)
+
+knitr::kable(authenticity.summary, digits = 4, row.names = FALSE)
+```
+
+The counterfeit samples showed a distinct descriptive profile. Their geometric mean concentrations were much higher for S and moderately for Ca and Br, while P, Cl, K, Mn, Fe, Cu, and Rb were lower than the non counterfeit group. These differences are descriptive rather than inferential because there are only five counterfeit observations, but they provide an initial indication that counterfeit status may be associated with a different multivariate element profile.
+
+## 4.3 Graphical findings
+
+```{r}
+#| fig-cap: "Distribution of raw element concentrations"
+#| fig-cap-location: top
+#| echo: false
+#| fig-width: 11
+#| fig-height: 8
+par(mfrow = c(3, 4), mar = c(4, 4, 2, 1))
+for(i in 1:11){ 
+  plot(
+    density(elements[,i]), 
+    main = names(elements)[i], 
+    xlab = "Concentration (mg/L)")
+  polygon(
+    density(elements[,i]), 
+    col = adjustcolor("lightblue", alpha.f = 0.25), 
+    border ="lightblue")
+  curve(
+    dnorm(x, mean(elements[,i]), sd = sd(elements[,i])), 
+    add = TRUE, 
+    lty = 1, 
+    col = "red")
+   }
+
+plot.new()
+ legend("center", 
+        legend = c("Observed density", "Normal approximation"),
+        col = c("lightblue", "red"),
+        lty = c(1,1), 
+        bty = "n", 
+        cex = 0.7
+        )
+par(mfrow = c(1, 1))
+```
+
+The concentrations show substantial positive skewness for several elements, particularly P, S, Cl, K, Cu, Zn, Br and Rb
+
+```{r}
+#| fig-cap: "Distribution of log-transformed element concentrations"
+#| fig-cap-location: top
+#| echo: false
+#| fig-width: 11
+#| fig-height: 8
+
+par(mfrow = c(3, 4), mar = c(4, 4, 2, 1))
+
+for (i in 1:11) {
+  plot(density(log.elements[, i]),
+       main = names(log.elements)[i],
+       xlab = "Concentration (mg/L)")
+  polygon(density(log.elements[, i]),
+          col = adjustcolor("lightblue", alpha.f = 0.25),
+          border = "lightblue")
+  curve(dnorm(x, mean(log.elements[, i]), sd = sd(log.elements[, i])),
+        add = TRUE, lty = 1, col = "red")
+}
+
+plot.new()
+legend("center",
+       legend = c("Observed density", "Normal approximation"),
+       col = c("lightblue", "red"),
+       lty = c(1, 1), bty = "n", cex = 0.7)
+
+par(mfrow = c(1, 1))
+```
+
+After log transformation, the distributions are generally more symmetric and closer to their normal approximations, although some departures remain.
+
+### 4.3.2 Boxplots
+
+```{r}
+#| label: fig-boxplots
+#| fig-cap: "Standardised log element concentrations in counterfeit and non-counterfeit whisky samples."
+#| fig-height: 6
+#| fig-width: 12
+#| fig-pos: "H"
+#| echo: false
+
+par(mfrow = c(1, 2))
+
+boxplot(as.data.frame(stand.elements[whisky.data$Group == "Counterfeit", ]),
+        main = "Counterfeit whisky samples",
+        ylab = "Standardised log concentration",
+        ylim = range(stand.elements), col = "red")
+
+boxplot(as.data.frame(stand.elements[whisky.data$Group == "Non-Counterfeit", ]),
+        main = "Non-counterfeit whisky samples",
+        ylab = "Standardised log concentration",
+        ylim = range(stand.elements), col = "lightgreen")
+
+par(mfrow = c(1, 1))
+```
+
+@fig-boxplots compares the standardised log element concentrations of counterfeit and non-counterfeit samples. Counterfeits have higher medians for S and Ca, but lower medians for P, Cl, K, Mn, Fe, Cu and Rb.
+
+Within the non-counterfeit group, medians are mostly near zero and the boxes have fairly similar heights across elements. Counterfeits show greater differences between elements: most S and Ca values are closely grouped, while Br and Fe vary more widely. These patterns describe the standardised log values rather than the original concentration scales.
+
+The boxplots suggest differences in the groups’ element profiles, but some elements, such as Zn, have similar values in both groups. Those elements alone would not clearly distinguish counterfeit from genuine whisky. With only five counterfeit samples, these findings should be treated as descriptive.
+
+### 4.3.3 Correlation analysis
+
+```{r}
+#| label: fig-correlation
+#| fig-cap: "Pearson correlations between log-transformed element concentrations."
+#| echo: false
+#| fig-width: 9
+#| fig-height: 8
+#| fig-pos: "H"
+
+#Log Data - updated 
+correlation.matrix.log <- cor(
+  whisky.log,
+  method = "pearson"
+)
+
+ggcorrplot(
+  correlation.matrix.log,
+  lab = TRUE
+)
+```
+
+\newpage
+
+From @fig-correlation we can see a clear set of relationships between log-transformed element concentrations, the strongest of which are positive. The strongest positive correlations exist between K and Rb (r = 0.93), which is then followed by K and Mn (r = 0.9), Mn and Rb (r = 0.88). There were also strong positive correlations observed between Mn and Cu (r = 0.77), Cu and Rb (r = 0.77), and K and Cu (r = 0.75). K, Mn, Cu, and Rb seem to form a group of strongly positively correlated elements. Negative correlations are uncommon and weak, with the largest negative correlation observed between between S and Cu (r = -0.26).
+
+### 4.3.4 Principal component analysis
+
+```{r}
+#| echo: false
+whisky.pca <- prcomp(log.elements, center = TRUE, scale = TRUE)
+## PCA scores
+pca.scores <- as.data.frame(whisky.pca$x)
+pca.scores$Group <- whisky.data$Group
+pca.scores$Sample <- whisky.data$Sample_no
+```
+
+```{r}
+#| label: fig-pca
+#| echo: false
+#| fig-cap: "First two principal components of standardised log element concentrations, coloured by whisky category."
+ggplot(pca.scores, aes(x = PC1, y = PC2, colour = Group)) +
+  geom_point(size = 3) +
+  geom_text(aes(label = Sample), vjust = -0.8, size = 3, show.legend = FALSE) +
+  labs(x = "PC1 (47.26%)", y = "PC2 (21.12%)") +
+  theme_minimal()
+```
+
+@fig-pca shows separation between counterfeit and non-counterfeit whisky samples. All five counterfeit samples (9-13) have positive PC2 scores and are positioned toward the lower, negative end of PC1. Most non-counterfeit samples have lower PC2 scores and are positioned further to the right of PC1. Sample 15 is the exception, appearing within the region of the counterfeit samples. Therefore, the counterfeit samples are separated from most, but not all, non-counterfeit samples. PC2 appears to be important in distinguishing counterfeit whisky samples from non-counterfeit samples.
+
+## 4.4 Normality results
+
+### 4.4.1 Marginal normality
+
+```{r}
+#| echo: false
+# Raw concentrations in long format.
+whisky.long <- whisky.data |>
+  pivot_longer(cols = all_of(element.names),
+               names_to = "Element",
+               values_to = "Concentration")
+
+# Log-transformed concentrations in long format.
+whisky.long.log <- as.data.frame(whisky.log) |>
+  mutate(Descriptor = whisky.data$Descriptor) |>
+  pivot_longer(cols = all_of(element.names),
+               names_to = "Element",
+               values_to = "Concentration")
+```
+
+```{r}
+#| label: Fig_QQ_By_Element
+#| echo: false
+#| fig-cap: "Normal Q-Q plots of raw element concentrations, using all samples within each element. Colours identify whisky categories."
+#| fig-width: 12
+#| fig-height: 9
+
+# Sort concentrations within each element, keeping category information.
+qq.raw <- whisky.long |>
+  group_by(Element) |>
+  arrange(Concentration, .by_group = TRUE) |>
+  mutate(Theoretical = qnorm(ppoints(n()))) |>
+  ungroup()
+
+ggplot(qq.raw, aes(x = Theoretical, y = Concentration)) +
+  geom_point(aes(colour = Descriptor), size = 1) +
+  stat_qq_line(
+    aes(sample = Concentration, group = 1),
+    inherit.aes = FALSE
+  ) +
+  facet_wrap(~ Element, scales = "free", ncol = 4) +
+  labs(
+    x = "Theoretical normal quantile",
+    y = "Concentration (mg/L)"
+  ) +
+  scale_colour_manual(values = descriptor_colours)
+```
+
+```{r}
+#| label: Fig_Histograms_By_Element_Log
+#| echo: false
+#| fig-cap: "Histograms of the log-transformed concentrations for each trace element."
+#| fig-width: 12
+#| fig-height: 9
+
+ggplot(whisky.long.log, aes(x = Concentration)) +
+  geom_histogram(bins = nclass.FD(whisky.long.log$Concentration), colour = histo.outline, fill = histo.col.2) +
+  facet_wrap(~ Element, scales = "free", ncol = 4) +
+  labs(x = "Concentration (mg/L)", y = "Frequency")
+```
+
+```{r}
+#| label: Fig_QQ_By_Element_Log
+#| echo: false
+#| fig-cap: "Normal Q-Q plots of log-transformed element concentrations, using all samples within each element. Colours identify whisky categories."
+#| fig-width: 12
+#| fig-height: 9
+
+# Sort log concentrations within each element.
+qq.log <- whisky.long.log |>
+  group_by(Element) |>
+  arrange(Concentration, .by_group = TRUE) |>
+  mutate(Theoretical = qnorm(ppoints(n()))) |>
+  ungroup()
+
+ggplot(qq.log, aes(x = Theoretical, y = Concentration)) +
+  geom_point(aes(colour = Descriptor), size = 1) +
+  stat_qq_line(
+    aes(sample = Concentration, group = 1),
+    inherit.aes = FALSE
+  ) +
+  facet_wrap(~ Element, scales = "free", ncol = 4) +
+  labs(
+    x = "Theoretical normal quantile",
+    y = "Log10 concentration"
+  ) +
+  scale_colour_manual(values = descriptor_colours)
+```
+
+The raw-concentration Q–Q plots show clear departures from normality for several elements. In particular, the highest Br, S and Zn concentrations lie well above the reference lines. This pattern indicates right-skewed distributions, with a few concentrations much higher than the rest.
+
+After log transformation, the points generally follow the reference lines more closely. K shows a clear improvement, while most Ca, Cl and Fe values also lie close to their lines. However, the highest Br and Zn values remain above the lines, and several low Cu values fall below the line. P has a nearly horizontal group of low values, showing that several samples have similar concentrations rather than the gradual increase expected under normality.
+
+These plots support using log transformation to reduce skewness, but some elements still depart from a normal distribution. Because each plot examines only one element, they cannot establish whether all eleven elements jointly follow a multivariate normal distribution.
+
+### 4.4.2 Multivariate Normality
+
+```{r}
+#| label: Regular_Mahalanobis
+#| echo: false
+#| fig-cap: "Q-Q plot of squared Mahalanobis distances against approximate chi-square reference quantiles with 11 degrees of freedom. Numbers identify samples; the dashed line represents equal observed and theoretical values."
+#| fig-width: 9
+#| fig-height: 7
+
+p <- ncol(whisky.log)
+
+# Keep each distance together with its sample number and category.
+dM <- data.frame(
+  distance = mahalanobis(
+    whisky.log,
+    center = colMeans(whisky.log),
+    cov = cov(whisky.log)
+  ),
+  Descriptor = whisky.data$Descriptor,
+  Sample_no = whisky.data$Sample_no
+)
+
+# Sort whole rows so the labels stay with the correct distances.
+dM.sorted <- dM |>
+  arrange(distance) |>
+  mutate(Theoretical = qchisq(ppoints(n()), df = p))
+
+ggplot(dM.sorted, aes(x = Theoretical, y = distance)) +
+  geom_abline(
+    intercept = 0,
+    slope = 1,
+    linetype = "dashed",
+    colour = "grey50"
+  ) +
+  geom_point(aes(colour = Descriptor), size = 2) +
+  geom_text(
+    aes(label = Sample_no),
+    vjust = -0.7,
+    size = 3,
+    show.legend = FALSE
+  ) +
+  scale_colour_manual(values = descriptor_colours) +
+  scale_y_continuous(
+    expand = expansion(mult = c(0.05, 0.12))
+  ) +
+  labs(
+    x = "Theoretical chi-square quantile",
+    y = "Squared Mahalanobis distance"
+  ) 
+```
+
+Most squared Mahalanobis distances lie close to the chi-square reference line. Although some points fall slightly below it, these differences are generally small, and the overall pattern follows the line reasonably well. Sample 12 has the largest distance and lies above the line at the upper end.
+
+The plot supports reasonable agreement with the chi-square reference. However, the reference is approximate because the mean and covariance are estimated from the same 32 samples. Visual agreement does not establish multivariate normality, so the plot should be considered alongside the individual-element Q–Q plots and the Anderson–Darling test.
+
+```{r}
+#| label: ad-test
+#| echo: false
+set.seed(2026)
+ad_test <- mvnTest::AD.test(whisky.log)
+ad_test
+```
+
+Performing an Anderson-Darling test for multivariate normality on the log-transformed data gives a test statistic of 0.2871985 and a corresponding p-value of 0.9527047. The null hypothesis is therefore not rejected.
+
+## 4.5 Surprising observations
+
+```{r}
+#| label: Plotting_Mahalanobis_Againt_Chi_Squared
+#| echo: false
+#| fig-cap: "Histogram of squared Mahalanobis distances with the chi-square reference density and 90%, 95%, and 99% cutoffs."
+
+
+#number of variables 
+p <- ncol(whisky.log)
+
+#Calculate squared mahalanobis distances 
+d2 <- mahalanobis(
+  whisky.log,
+  center = colMeans(whisky.log),
+  cov = cov(whisky.log)
+)
+
+#put distances and sample information into a data frame
+dM <- data.frame(
+  distance = as.numeric(d2),
+  Descriptor = whisky.data$Descriptor,
+  Sample_no = whisky.data$Sample_no
+)
+
+#chi squared cutoffs
+upper.quantiles <- qchisq(c(
+  .9, .95, .99), 
+  df=p)
+
+density.at.quantiles <- dchisq(
+  x=upper.quantiles,
+  df=p)
+
+cut.points <- data.frame(
+  upper.quantiles, 
+  density.at.quantiles
+  )
+
+
+#plot 
+ggplot(dM, aes(x=distance)) +
+	geom_histogram(aes(y=after_stat(density)), bins=10, col=histo.outline, fill="lightgray") +
+	geom_rug() +
+	stat_function(fun=dchisq, args = list(df=p),
+				  col="blue", linewidth=2, alpha=.9, xlim=c(-5,40)) +
+	geom_segment(data=cut.points,
+				 aes(x=upper.quantiles, xend=upper.quantiles,
+					 y=rep(0,3), yend=density.at.quantiles),
+				 col="green", linewidth=2) +
+	xlab("Mahalanobis distances and cut points") +
+	ylab("Histogram and density")
+```
+
+```{r}
+#| echo: false
+# Observations above the 99% cutoff
+dM |>
+  filter(distance > upper.quantiles[3])
+```
+
+The clearest unusual observation was 12, a counterfeit whisky. Its squared Mahalanobis distance was approximately 25.39, making it the only observation above the 99th percentile chi-squared reference cutoff. No other observation exceeded the 95th percentile cutoff. Sample 12 was therefore examined in greater detail.
+
+```{r}
+#| label: tbl-sample-12-profile
+#| tbl-cap: "Element concentrations and standardised log values for sample 12."
+#| echo: false
+
+sample.ids <- trimws(as.character(whisky.data$Sample_no))
+
+i12 <- match("12", sample.ids)
+
+stopifnot(!is.na(i12))
+
+sample12.profile <- data.frame(
+  Element = element.names,
+  Concentration = as.numeric(elements[i12, ]),
+  Standardised_log_value = as.numeric(whisky.std[i12, ])
+) |>
+  arrange(desc(abs(Standardised_log_value)))
+
+knitr::kable(
+  sample12.profile,
+  digits = c(0, 4, 3),
+  col.names = c("Element", "Concentration (mg/L)", "Standardised log value"),
+  row.names = FALSE
+)
+```
+
+Sample 12 has an unusual combination of trace element concentrations rather than a single extreme measurement. In particular, it has a notably high Br concentration, together with relatively high S and comparatively low Fe, Cu and Rb concentrations. These variables contribute to its large Mahalanobis distance because the distance considers the eleven elements jointly while also accounting for their covariance.
+
+What this shows is that even if a sample can look fairly normal on each element, it can still have an unusual overall combination of element concentrations. For this reason, sample 12 is better described as an unusual observation than as an error that should be removed
+
+## 4.6 Initial clustering results
+
+```{r}
+#| echo: false
+##just slightly different 
+
+#short label for dendograms
+type.code <- c(
+  Blend = "BL",
+  Counterfeit = "CF",
+  Grain = "GR",
+  Highland = "HI",
+  Island = "IS",
+  Lowland = "LO",
+  Speyside = "SP"
+)
+sample.labels <- paste0(
+  whisky.data$Sample_no,
+  type.code[as.character(whisky.data$Descriptor)]
+)
+
+# Common plotting function for three or four clusters.
+plot.distance.tree <- function(tree, plot.title, k = 3) {
+  tree$labels <- sample.labels
+
+  factoextra::fviz_dend(
+    tree,
+    k = k,
+    cex = 0.7,
+    k_colors = "black",
+    color_labels_by_k = FALSE,
+    rect = TRUE,
+    rect_border = cluster.colours[seq_len(k)],
+    rect_lty = 1,
+    main = plot.title,
+    xlab = "",
+    ylab = "Merge height"
+  )
+}
+
+cluster.colours <- c(
+  "#005AA7", "#008000", "#A71919", "#984EA3"
+)
+
+```
+
+```{r}
+#| label: setup-euclidean-complete
+#| include: false
+
+standardisation.summary <- data.frame(
+  Element = colnames(whisky.log),
+  Mean_before = colMeans(whisky.log),
+  SD_before = apply(whisky.log, 2, sd),
+  Mean_after = colMeans(whisky.std),
+  SD_after = apply(whisky.std, 2, sd)
+)
+
+#changed whisky.z to whisky.std
+
+knitr::kable(
+  standardisation.summary,
+  digits = 3,
+  row.names = FALSE,
+  longtable = FALSE,
+  col.names = c(
+    "Element", "Mean before", "SD before",
+    "Mean after", "SD after"
+  )
+)
+distance.euclidean <- dist(whisky.std, method = "euclidean")
+
+tree.euclidean <- hclust(
+  distance.euclidean,
+  method = "complete"
+)
+
+tree.euclidean$labels <- sample.labels
+
+groups.euclidean <- cutree(tree.euclidean, k = 3)
+groups.k4 <- cutree(tree.euclidean, k = 4)
+
+membership.initial <- summarise.membership(groups.euclidean)
+membership.k4 <- summarise.membership(groups.k4)
+
+k.comparison <- do.call(
+  rbind,
+  lapply(2:6, function(k) {
+    groups <- cutree(tree.euclidean, k = k)
+    sil <- cluster::silhouette(groups, distance.euclidean)
+
+    sizes <- sort(
+      as.integer(table(groups)),
+      decreasing = TRUE
+    )
+
+    data.frame(
+      K = k,
+      Mean_silhouette = mean(sil[, "sil_width"]),
+      Cluster_sizes = paste(sizes, collapse = ", ")
+    )
+  })
+)
+```
+
+```{r}
+#| label: tbl-euclidean-k
+#| echo: false
+#| tbl-cap: "Comparison of two to six clusters using Euclidean distance and complete linkage."
+
+knitr::kable(
+  k.comparison,
+  digits = 3,
+  row.names = FALSE,
+  longtable = FALSE,
+  col.names = c(
+    "Number of clusters",
+    "Mean silhouette score",
+    "Cluster sizes (largest first)"
+  )
+)
+```
+
+Mean silhouette scores ranged from 0.283 to 0.305 across the two- to six-cluster cuts, indicating only small differences by this criterion. Four clusters gave the highest score (0.305), followed by three clusters (0.301). Both cuts are examined below to assess how their memberships differ.
+
+```{r}
+#| label: fig-euclidean-complete-k3
+#| echo: false
+#| warning: false
+#| fig-cap: "Euclidean distance with complete linkage at three clusters. Labels give sample numbers and categories: BL blend, CF counterfeit, GR grain, HI Highland, IS Island, LO Lowland and SP Speyside."
+#| fig-width: 10
+#| fig-height: 7
+#| fig-pos: "H"
+
+plot.distance.tree(
+  tree.euclidean,
+  "Euclidean distance and complete linkage: three clusters",
+  k = 3
+)
+```
+
+```{r}
+#| label: fig-euclidean-complete-k4
+#| echo: false
+#| warning: false
+#| fig-cap: "Euclidean distance with complete linkage at four clusters. Sample labels follow the same convention as the three-cluster figure."
+#| fig-width: 10
+#| fig-height: 7
+#| fig-pos: "H"
+
+plot.distance.tree(
+  tree.euclidean,
+  "Euclidean distance and complete linkage: four clusters",
+  k = 4
+)
+```
+
+@tbl-euclidean-members lists the sample membership at three clusters.
+
+```{r}
+#| label: tbl-euclidean-members
+#| echo: false
+#| tbl-cap: "Euclidean complete-linkage membership at three clusters."
+
+knitr::kable(
+  membership.initial,
+  row.names = FALSE,
+  longtable = FALSE
+)
+```
+
+At three clusters, the groups contain 16, 10 and 6 samples. The largest group contains all eight blends alongside eight whiskies from other categories. The six-sample group contains all five counterfeits and one genuine grain whisky (sample ID 15).
+
+At four clusters, counterfeit sample 12 separates from the six-sample group and forms a cluster of its own. The groups of 16 and 10 remain unchanged.
+
+## 4.7 Comparison of distance measures
+
+Let $\mathbf{x}$ and $\mathbf{y}$ represent two samples' standardised log concentrations across the $m = 11$ elements, with $\rho(\mathbf{x},\mathbf{y})$ denoting their Pearson correlation.
+
+Euclidean ($L_2$) $$d_2(\mathbf{x},\mathbf{y}) = \sqrt{\sum_{\ell=1}^{m}(x_\ell - y_\ell)^2}$$
+
+Manhattan ($L_1$) $$d_1(\mathbf{x},\mathbf{y}) = \sum_{\ell=1}^{m} |x_\ell - y_\ell|$$
+
+Maximum ($L_\infty$) $$d_\infty(\mathbf{x},\mathbf{y}) = \max_{1 \le \ell \le m}\{|x_\ell - y_\ell|\}$$ Correlation $$d_\rho(\mathbf{x},\mathbf{y}) = \frac{1 - \rho(\mathbf{x},\mathbf{y})}{2}$$ These distance and dissimilarity measures follow @frery-cluster [Sections 1.2.2 and 1.4].
+
+```{r}
+#| label: setup-distance-comparison
+#| include: false
+
+sample.correlations <- cor(t(whisky.std))
+
+#stopifnot(all(is.finite(sample.correlations)))
+
+distance.list <- list(
+  Euclidean = distance.euclidean,
+  Manhattan = dist(whisky.std, method = "manhattan"),
+  Maximum = dist(whisky.std, method = "maximum"),
+  Correlation = as.dist((1 - sample.correlations) / 2)
+)
+
+tree.list <- list(
+  Euclidean = tree.euclidean,
+  Manhattan = hclust(
+    distance.list$Manhattan,
+    method = "complete"
+  ),
+  Maximum = hclust(
+    distance.list$Maximum,
+    method = "complete"
+  ),
+  Correlation = hclust(
+    distance.list$Correlation,
+    method = "complete"
+  )
+)
+
+groups.list <- lapply(
+  tree.list,
+  function(tree) cutree(tree, k = 3)
+)
+
+groups.list.k4 <- lapply(
+  tree.list,
+  function(tree) cutree(tree, k = 4)
+)
+```
+
+```{r}
+#| label: tbl-silhouette-distances
+#| echo: false
+#| tbl-cap: "Mean silhouette scores for two to six clusters under complete linkage."
+silhouette.by.distance <- do.call(rbind, lapply(2:6, function(k) {
+
+  scores <- vapply(names(tree.list), function(measure) {
+
+    groups <- cutree(tree.list[[measure]], k = k)
+
+    mean(
+      cluster::silhouette(groups, distance.list[[measure]])[, "sil_width"]
+    )
+  }, numeric(1))
+
+  data.frame(Clusters = k, t(scores))
+}))
+
+knitr::kable(
+  silhouette.by.distance,
+  digits = 3,
+  row.names = FALSE,
+  col.names = c("Number of clusters", names(tree.list))
+)
+```
+
+As shown in @tbl-silhouette-distances, Euclidean distance has its highest mean silhouette score at four clusters (0.305), while Manhattan and correlation peak at three clusters (0.347 and 0.328). Maximum distance peaks at six clusters (0.219), only slightly above four clusters (0.216). Its scores remain low across all tested cluster counts, suggesting limited separation under maximum distance.
+
+Since each distance measure defines similarity differently, we use the scores mainly to compare cluster counts within each measure. We retain three and four cluster cuts below so that membership can be compared across all four distance measures at the same cluster counts.
+
+@tbl-distance-comparison compares cluster sizes at three and four clusters. @tbl-counterfeit-membership shows the group containing the most counterfeits at three clusters.
+
+```{r}
+#| label: tbl-distance-comparison
+#| tbl-pos: "H"
+#| tbl-cap: "Cluster sizes at three and four clusters under complete linkage, listed largest first."
+#| echo: false
+
+measures <- c("Euclidean", "Manhattan", "Maximum", "Correlation")
+
+cuts3 <- lapply(tree.list[measures], cutree, k = 3)
+cuts4 <- lapply(tree.list[measures], cutree, k = 4)
+
+cluster.sizes <- function(groups) {
+  paste(sort(as.integer(table(groups)), decreasing = TRUE),
+        collapse = ", ")
+}
+
+describe.split <- function(groups3, groups4) {
+  old.groups <- split(seq_along(groups3), groups3)
+
+  changed <- Filter(
+    function(i) length(unique(groups4[i])) > 1,
+    old.groups
+  )
+
+  stopifnot(length(changed) == 1)
+
+  members <- changed[[1]]
+  new.sizes <- sort(
+    as.integer(table(groups4[members])),
+    decreasing = TRUE
+  )
+
+  paste0(
+    length(members), " splits into ",
+    paste(new.sizes, collapse = " + ")
+  )
+}
+
+size.comparison <- do.call(rbind, lapply(measures, function(measure) {
+  data.frame(
+    Measure = measure,
+    Three = cluster.sizes(cuts3[[measure]]),
+    Four = cluster.sizes(cuts4[[measure]]),
+    Split = describe.split(cuts3[[measure]], cuts4[[measure]])
+  )
+}))
+
+# Check agreement using membership, not cluster labels.
+same.partition <- function(a, b) {
+  all(outer(a, a, "==") == outer(b, b, "=="))
+}
+
+stopifnot(
+  same.partition(cuts3$Euclidean, cuts3$Manhattan),
+  same.partition(cuts4$Euclidean, cuts4$Manhattan)
+)
+
+knitr::kable(
+  size.comparison,
+  format = "latex",
+  booktabs = TRUE,
+  longtable = FALSE,
+  row.names = FALSE,
+  col.names = c(
+    "Measure", "Sizes at k = 3",
+    "Sizes at k = 4", "Group that divides"
+  ),
+  align = c("l", "l", "l", "l")
+) |>
+  kableExtra::kable_styling(
+    latex_options = "HOLD_position",
+    full_width = FALSE,
+    font_size = 10
+  )
+```
+
+```{r}
+#| label: tbl-counterfeit-membership
+#| tbl-cap: "Membership of the group containing the most counterfeits at three clusters, using complete linkage. Each row describes one selected group, not all 32 samples."
+#| tbl-pos: "H"
+#| echo: false
+
+sample.ids <- whisky.data$Sample_no
+categories <- as.character(whisky.data$Descriptor)
+is.counterfeit <- categories == "Counterfeit"
+
+stopifnot(
+  length(sample.ids) == 32,
+  !anyNA(categories),
+  sum(is.counterfeit) == 5
+)
+
+describe.counterfeit.group <- function(groups) {
+  # cutree assignments follow the original input row order.
+  stopifnot(length(groups) == length(sample.ids))
+
+  counterfeit.counts <- table(groups[is.counterfeit])
+  main.group <- as.integer(
+    names(counterfeit.counts)[which.max(counterfeit.counts)]
+  )
+
+  in.group <- groups == main.group
+
+  counterfeit.members <- sort(
+    sample.ids[in.group & is.counterfeit]
+  )
+
+  genuine.members <- sort(
+    sample.ids[in.group & !is.counterfeit]
+  )
+
+  grain.members <- sort(
+    sample.ids[in.group & categories == "Grain"]
+  )
+
+  if (length(genuine.members) == 0) {
+    genuine.text <- "No genuine whiskies"
+  } else if (
+    length(genuine.members) == 1 &&
+    length(grain.members) == 1
+  ) {
+    genuine.text <- paste0(
+      "1 genuine grain whisky (sample ID ",
+      genuine.members, ")"
+    )
+  } else {
+    genuine.text <- paste(
+      length(genuine.members), "genuine whiskies"
+    )
+
+    if (length(grain.members) > 0) {
+      genuine.text <- paste0(
+        genuine.text,
+        ", including grain sample ",
+        if (length(grain.members) == 1) "ID " else "IDs ",
+        paste(grain.members, collapse = " and ")
+      )
+    }
+  }
+
+  data.frame(
+    Counterfeit_IDs = paste(counterfeit.members, collapse = ", "),
+    Genuine_members = genuine.text
+  )
+}
+
+counterfeit.comparison <- do.call(rbind, lapply(measures, function(measure) {
+  cbind(
+    Measure = measure,
+    describe.counterfeit.group(cuts3[[measure]])
+  )
+}))
+
+knitr::kable(
+  counterfeit.comparison,
+  format = "latex",
+  booktabs = TRUE,
+  longtable = FALSE,
+  row.names = FALSE,
+  col.names = c(
+    "Measure",
+    "Counterfeit sample IDs",
+    "Genuine whiskies in that group"
+  ),
+  align = c("l", "l", "l")
+) |>
+  kableExtra::kable_styling(
+    latex_options = "HOLD_position",
+    full_width = FALSE,
+    font_size = 10
+  ) |>
+  kableExtra::column_spec(1, width = "2.2cm") |>
+  kableExtra::column_spec(2, width = "3.7cm") |>
+  kableExtra::column_spec(3, width = "6.0cm")
+```
+
+Euclidean and Manhattan produce identical groups at both three and four clusters. At three clusters, they place all five counterfeits together with one genuine grain whisky (sample ID 15). Correlation placed four counterfeits with that same grain whisky. Maximum spreads the counterfeits across three groups.
+
+When four clusters are used, counterfeit sample 12 becomes a separate, single-sample group under Euclidean, Manhattan and maximum. Under correlation, only a group of genuine whiskies splits, so the counterfeit grouping stays unchanged.
+
+With complete linkage held fixed, the clustering is partly consistent across distance measures. None of the four distance measures at three or four clusters placed all five counterfeits together without including genuine whisky. Section 4.8 examines how the results change when Euclidean distance is held fixed and the linkage method is varied.
+
+## 4.8 Comparison of linkage methods
+
+```{r}
+#| label: linkage-comparison-setup
+#| include: false
+
+single.cluster <- hclust(
+  distance.euclidean,
+  method = "single"
+)
+
+complete.cluster <- tree.euclidean
+
+average.cluster <- hclust(
+  distance.euclidean,
+  method = "average"
+)
+
+single.groups <- cutree(single.cluster, k = 3)
+complete.groups <- cutree(complete.cluster, k = 3)
+average.groups <- cutree(average.cluster, k = 3)
+
+linkage.results <- data.frame(
+  Sample = whisky.data$Sample_no,
+  Type = whisky.data$Descriptor,
+  Single = single.groups,
+  Complete = complete.groups,
+  Average = average.groups
+)
+```
+
+```{r}
+#| label: tbl-linkage-membership
+#| tbl-cap: "Cluster membership under single, complete and average linkage using Euclidean distance at three clusters. Cluster numbers are labels within each method."
+#| echo: false
+knitr::kable(
+  linkage.results,
+  row.names = FALSE
+)
+```
+
+As shown in @tbl-linkage-membership, the three linkage methods produced different cluster memberships using Euclidean distance at three clusters. Complete linkage placed all five counterfeits together with genuine grain sample 15 in a six-sample group.
+
+Single linkage placed counterfeits 9 and 13 with all 27 genuine samples, while 10 and 11 formed a pair and 12 formed a singleton.
+
+Average linkage placed four counterfeits (9, 10, 11 and 13) with 25 genuine samples in a group of 29. Sample 12 formed a singleton, while samples 19 and 20 formed the remaining group. Thus, complete linkage produced the most concentrated grouping containing all five counterfeits, although it also included a genuine sample.
+
+## 4.9 Cluster consistency findings
+
+The five counterfeit samples showed a recurring tendency to group together, but the grouping was not stable across all distance measures and linkage methods. With complete linkage held fixed, Euclidean and Manhattan distance grouped all five counterfeit samples together with 15. Correlation dissimilarity grouped four of the five counterfeits with 15, and maximum distance produced a less concentrated counterfeit grouping.
+
+A similar sensitivity was observed when Euclidean distance was held fixed and linkage was changed. Complete linkage grouped all five counterfeit samples with 15, whereas single and average linkage split the counterfeit samples. Sample 12 was the most method-sensitive counterfeit observation. The repeated inclusion of 15 also shows that the observed element pattern is not unique to counterfeit status.
+
+# 5 Discussion
+
+## 5.1 Evidence of a counterfeit related multivariate pattern
+
+The descriptive, graphical and multivariate analyses provide evidence of a recurring difference between the trace-element profiles of counterfeit samples and most non-counterfeit samples. Counterfeit samples had notably higher S concentrations alongside lower concentrations of several elements including K, Mn, Cu and Rb. PCA was useful as a low-dimensional representation of this pattern, with all five counterfeit samples separated from most non-counterfeit samples across the first two principal components, which together explained 68.38% of total variation.
+
+However, the counterfeit-related pattern should not be interpreted as a unique chemical signature. Sample 15, an unmatured but non-counterfeit grain whisky, repeatedly appeared close to or within the counterfeit grouping in both PCA and several cluster specifications. This indicates that similarity in the eleven trace elements is related to counterfeit status in this dataset but is not sufficient by itself to definitively determine a sample's authenticity.
+
+## 5.2 Method sensitivity and cluster consistency
+
+The conclusions of our clustering results showed part-consistency in grouping of counterfeit samples, with exact groupings being sensitive to the choice of distance measure, linkage method, and number of clusters. Under complete linkage, Euclidean and Manhattan distance gave similar results, grouping all five counterfeit samples together and with non-counterfeit sample 15. However, maximum and correlation dissimilarity changed the resulting partition. Likewise, with Euclidean distance fixed, complete, average and single linkage produced different memberships for the counterfeit observations.
+
+The important feature is therefore not a single exact partition, but the recurring structure across methods. Four of the counterfeit samples, 9, 10, 11 and 13, showed a persistent tendency to remain relatively close, while sample 12 was more sensitive to the clustering specification. Complete linkage produced the most concentrated grouping of counterfeit samples among the linkage methods considered.
+
+## 5.3 Samples 12 and 15
+
+Sample 12 connects the Mahalanobis and clustering results. It had the largest squared Mahalanobis distance and was the only observation above the 99% chi-squared reference cutoff. It was also the counterfeit observation most likely to separate from the rest of the counterfeit group when the clustering method or number of clusters changed. These results consistently identify 12 as having a particularly distinctive and surprising multivariate element profile.
+
+Sample 15 presents the opposite issue. It was not labelled as a counterfeit whisky sample, but repeatedly appeared close to the counterfeit samples in both PCA and clustering analyses. This limits the interpretation of the counterfeit-related clusters: the clusters show chemical similarity, not a definitive authenticity classification.
+
+## 5.4 Limitations
+
+Several limitations affect the strength of the conclusions. First, the dataset contains only 32 observations and only five known counterfeit samples, so the counterfeit group is small. Second, group sizes are unequal. Third, some trace element values were below the limits of detection and had to be substituted using half the reported detection limit. Fourth, hierarchical clustering is inherently sensitive to choices of distance, linkage and number of clusters, which was directly observed in this analysis. Finally, the dataset does not establish whether these patterns would generalise to new whisky samples or counterfeit products outside the observed sample.
+
+## 5.5 Direct answer to the main research question
+
+The cluster analysis was only partly consistent across different distance measures and linkage methods. A recurring counterfeit-related structure was present, but the exact cluster membership changed with the clustering specification. Euclidean and Manhattan distance with complete linkage grouped all five counterfeit samples together with non-counterfeit sample 15 at three clusters, while other distance or linkage choices separated at least some counterfeit samples. Sample 12 was particularly method sensitive, and non-counterfeit grain sample 15 repeatedly joined the counterfeit-related group.
+
+These results therefore indicate that the trace element data contain a recurring multivariate pattern associated with the counterfeit samples, but the clustering is not sufficiently stable or specific to support treating any single hierarchical clustering specification as a reliable method for identifying counterfeit whisky.
+
+# 6. Conclusion
+
+The eleven trace-element concentrations showed skewness on their original scales, and log transformation produced distributions that were more suitable for multivariate analysis. Several elements were strongly correlated, and PCA showed a clear counterfeit related multivariate pattern, with the first two principal components explaining 63.38% of total variation. We considered multivariate normality approximately reasonable as a working assumption for the log-transformed data, although some deviations remained in the tails. Sample 12 was the clearest surprising multivariate observation and was also the most method-sensitive counterfeit sample in the clustering analysis. Hierarchical clustering repeatedly revealed similarity among the counterfeit samples, but the exact partition depended on the distance measure, linkage method and number of clusters. The repeated inclusion of non-counterfeit sample 15 further shows that the observed trace element pattern is not unique to counterfeit status. Overall, trace element profiles appear useful for describing chemical differences among the whisky samples, but the clustering results should be interpreted as evidence of recurring structure rather than as a definitive authentication rule.
+
+```{=html}
+<!-- ## References
+
+::: {#refs}
+:::
+-->
+```
