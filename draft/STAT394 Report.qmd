@@ -228,7 +228,7 @@ The three and four cluster cuts had the two highest mean scores. Both were exami
 
 ### 3.6.2 Distance Measures
 
-To assess sensitivity to the choice of distance measure, complete linkage was held fixed while Euclidean, Manhattan, maximum and correlation dissimilarity were compared. Correlation dissimilarity was defined as $d=(1-r)/2$\$d=(1-r)/2\$, where $r$ is the Pearson correlation between two standardised sample profiles. Cluster membership was compared at three and four clusters.
+To assess sensitivity to the choice of distance measure, complete linkage was held fixed while Euclidean, Manhattan, maximum and correlation dissimilarity were compared. Correlation dissimilarity was defined as $d=(1-r)/2$, where $r$ is the Pearson correlation between two standardised sample profiles. Cluster membership was compared at three and four clusters.
 
 ### 3.6.3 Linkage methods
 
@@ -404,7 +404,7 @@ ggcorrplot(
 
 \newpage
 
-From @fig-correlation we can see a clear set of relationships between log-transformed element concentrations, the strongest of which are positive. The strongest positive correlations exist between K and Rb (r = 0.93), which is then followed by K and Mn (r = 0.9), Mn and Rb (r = 0.88). There were also strong positive correlations observed between Mn and Cu (r = 0.77), Cu and Rb (r = 0.77), and K and Cu (r = 0.75). K, Mn, Cu, and Rb seem to form a group of strongly positively correlated elements. Negative correlations are uncommon and weak, with the largest negative correlation observed between between S and Cu (r = -0.26).
+From @fig-correlation we can see a clear set of relationships between log-transformed element concentrations, the strongest of which are positive. The strongest positive correlations exist between K and Rb (r = 0.93), which is then followed by K and Mn (r = 0.9), Mn and Rb (r = 0.88). There were also strong positive correlations observed between Mn and Cu (r = 0.77), Cu and Rb (r = 0.77), and K and Cu (r = 0.75). K, Mn, Cu, and Rb seem to form a group of strongly positively correlated elements. Negative correlations are uncommon and weak, with the largest negative correlation observed between S and Cu (r = -0.26).
 
 ### 4.3.4 Principal component analysis
 
@@ -1209,12 +1209,9 @@ These results therefore indicate that the trace element data contain a recurring
 
 # 6. Conclusion
 
-The eleven trace-element concentrations showed skewness on their original scales, and log transformation produced distributions that were more suitable for multivariate analysis. Several elements were strongly correlated, and PCA showed a clear counterfeit related multivariate pattern, with the first two principal components explaining 63.38% of total variation. We considered multivariate normality approximately reasonable as a working assumption for the log-transformed data, although some deviations remained in the tails. Sample 12 was the clearest surprising multivariate observation and was also the most method-sensitive counterfeit sample in the clustering analysis. Hierarchical clustering repeatedly revealed similarity among the counterfeit samples, but the exact partition depended on the distance measure, linkage method and number of clusters. The repeated inclusion of non-counterfeit sample 15 further shows that the observed trace element pattern is not unique to counterfeit status. Overall, trace element profiles appear useful for describing chemical differences among the whisky samples, but the clustering results should be interpreted as evidence of recurring structure rather than as a definitive authentication rule.
+The eleven trace-element concentrations showed skewness on their original scales, and log transformation produced distributions that were more suitable for multivariate analysis. Several elements were strongly correlated, and PCA showed a clear counterfeit related multivariate pattern, with the first two principal components explaining 68.38% of total variation. We considered multivariate normality approximately reasonable as a working assumption for the log-transformed data, although some deviations remained in the tails. Sample 12 was the clearest surprising multivariate observation and was also the most method-sensitive counterfeit sample in the clustering analysis. Hierarchical clustering repeatedly revealed similarity among the counterfeit samples, but the exact partition depended on the distance measure, linkage method and number of clusters. The repeated inclusion of non-counterfeit sample 15 further shows that the observed trace element pattern is not unique to counterfeit status. Overall, trace element profiles appear useful for describing chemical differences among the whisky samples, but the clustering results should be interpreted as evidence of recurring structure rather than as a definitive authentication rule.
 
-```{=html}
-<!-- ## References
+## References
 
 ::: {#refs}
 :::
--->
-```
