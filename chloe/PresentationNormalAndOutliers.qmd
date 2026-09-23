@@ -1,30 +1,694 @@
 ---
-title: "NormalOutliersPresentation"
-author: "Chloe"
-format: revealjs
+title: "Normal/Mahalanobis and Outliers"
+subtitle: "Multivariate normality and outlier detection in whisky trace elements"
+author: "chloe"
+date: today
+format:
+  revealjs:
+    theme: default
+    slide-number: true
+    show-slide-number: all
+    scrollable: true
+    transition: fade
+    fig-align: center
+    code-overflow: wrap
+    code-line-numbers: false
+    preview-links: auto
+    embed-resources: true
+execute:
+  echo: false
+  warning: false
+  message: false
+  fig-width: 10
+  fig-height: 4.8
+bibliography: [
+  citations/RobustMahalanobis.bib,
+  citations/ShandEtAl.bib,
+  citations/MAD.bib,
+  citations/MADDepth.bib,
+  citations/MCDExtensions.bib,
+  citations/MRCD.bib,
+  citations/RobustEstDist.bib,
+  citations/whisky.bib]
 ---
 
-## Quarto
-
-Quarto enables you to weave together content and executable code into a finished presentation. To learn more about Quarto presentations see <https://quarto.org/docs/presentations/>.
-
-## Bullets
-
-When you click the **Render** button a document will be generated that includes:
-
--   Content authored with markdown
--   Output from executable code
-
---- 
-
-new slide.
-
-## Code
-
-When you click the **Render** button a presentation will be generated that includes both content and the output of embedded code. You can embed code like this:
-
 ```{r}
-1 + 1
+#| label: Load_Libraries
+#| include: false
+
+library(tidyverse)
+library(ggplot2)
+library(ggcorrplot)
+library(gridExtra)
+library(reshape2)
+library(dplyr)
+library(pander)
+library(ggbiplot)
+library(caret)
+library(MASS)
+library(latex2exp)
+library(rrcov)
+library(mvnTest)
 ```
 
+```{r}
+#| label: Set_Theme
+#| include: false
 
+## Larger base size so text is legible when projected
+theme_set(
+  theme_bw(
+    base_size = 16,
+    base_family = "sans"
+  ) +
+    theme(
+      panel.grid.major = element_line(colour = "grey85"),
+      panel.grid.minor = element_blank(),
+      legend.position = "right"
+    )
+)
+
+descriptor_colours <- c(
+  "Blend"       = "#E41A1C",
+  "Counterfeit" = "#377EB8",
+  "Grain"       = "#4DAF4A",
+  "Highland"    = "#984EA3",
+  "Island"      = "#FF7F00",
+  "Lowland"     = "#A65628",
+  "Speyside"    = "#F781BF"
+)
+
+descriptor_shapes <- c(
+  "Blend"       = 16,
+  "Counterfeit" = 17,
+  "Grain"       = 15,
+  "Highland"    = 18,
+  "Island"      = 3,
+  "Lowland"     = 7,
+  "Speyside"    = 8
+)
+
+## Want some kinda colours for bar/histograms
+
+histo.col.1 <- "#6ea81c"
+histo.col.2 <- "#c444b3"
+histo.outline <- "#4f4f4f"
+
+## Tables on slides need to be narrow, so pander gets a tighter width
+panderOptions("table.split.table", Inf)
+panderOptions("table.alignment.default", "right")
+```
+
+```{r}
+#| label: Prepping_Data
+#| include: false
+
+whisky.data <- read.csv("../whisky_trace_elements.csv", header = TRUE)
+
+elements <- c("P", "S", "Cl", "K", "Ca", "Mn",
+              "Fe", "Cu", "Zn", "Br", "Rb")
+
+handle_lod <- function(column) {
+  for (i in 1:length(column)) {
+    val = column[i]
+    if (grepl('<', val)) {
+      new_val = as.double(sub("<", "", val)) / 2.
+      column[i] = new_val
+    }
+    column[i] = as.double(column[i])
+  }
+  return(column)
+}
+
+## handling lod's like the paper does
+whisky.data$P <- as.double(handle_lod(whisky.data$P))
+whisky.data$Cl <- as.double(handle_lod(whisky.data$Cl))
+whisky.data$Br <- as.double(handle_lod(whisky.data$Br))
+whisky.data$Rb <- as.double(handle_lod(whisky.data$Rb))
+
+whisky.data$Descriptor <- as.factor(whisky.data$Descriptor)
+whisky.data$Distillery <- as.factor(whisky.data$Distillery)
+whisky.data <- as.data.frame(whisky.data)
+```
+
+# 7. Multivariate Normality
+
+Can we assume a multivariate normal distribution?
+
+## To Cover
+
+This section will go over:
+
+- **Marginally**: does each variable by itself look normal?
+- **Jointly**: when put together, do they appear to be multivariate normal?
+
+Marginal normal Q-Q plots assess each element separately. Points lying along a straight line support normality for that element.
+
+::: {.notes}
+Marginal normality is necessary but nowhere near sufficient - hence the Mahalanobis step that follows.
+:::
+
+## Assessing the joint behaviour
+
+We calculate squared Mahalanobis distances using the sample mean and covariance of the log-transformed concentrations.
+
+Those distances are compared against a $\chi^2_{11}$ density, with 90%, 95% and 99% reference cutoffs.
+
+**It's important to note:**
+
+Mean and covariance are estimated from the same 32 samples, so the reference curve is only approximate. Even if the observations where perfectly following th eline, it does not necessarily mean they follow multivariate normality.
+
+---
+
+```{r}
+#| label: Fig_Histogram_By_Element
+#| fig-height: 6
+#| fig-width: 9
+
+whisky.long <- whisky.data |>
+  pivot_longer(cols = all_of(elements),
+               names_to = "Element", values_to = "Concentration")
+
+ggplot(whisky.long, aes(x = Concentration)) +
+  geom_histogram(bins = 10, colour = histo.outline, fill = histo.col.1) +
+  facet_wrap(~ Element, scales = "free", ncol = 4) +
+  labs(x = "Concentration (mg/L)", y = "Frequency") +
+  ggtitle("Histograms - original scale")
+```
+
+## What the histograms show
+
+- Every element except **Mn** shows a long right tail.
+- That shape is consistent with the variables being approximately log-normal on their original scale.
+- **Mn** looks almost bimodal.
+
+---
+
+```{r}
+#| label: Fig_QQ_By_Element
+#| fig-height: 8
+#| fig-width: 12
+
+ggplot(whisky.long, aes(sample = Concentration)) +
+  ggtitle("Q-Q Plots - orignal scale") +
+  stat_qq(mapping = aes(colour = Descriptor), size = 1) +
+  stat_qq_line() +
+  facet_wrap(~ Element, scales = "free", ncol = 4) +
+  labs(x = "Theoretical Quantile", y = "Sample Quantile") +
+  scale_color_manual(values = descriptor_colours) +
+  theme(legend.position = c(.9, .15))
+```
+
+## What the Q-Q plots show
+
+- Curvature in the tails, particularly pronounced in the right tails.
+- **Mn** shows substantially more scatter around the reference line.
+- That scatter is consistent with its histogram and its almost bimodal appearance.
+
+## Log transforming {.smaller}
+
+Because the histograms are so right skewed, a log transformation might bring their shape closer to normal.
+
+```{r}
+#| label: Log_Transforming_Whisky_Data
+#| echo: true
+
+whisky.log <- whisky.data |>
+  mutate(across(where(is.numeric), log))
+
+whisky.long.log <- whisky.log |>
+  pivot_longer(cols = all_of(elements),
+               names_to = "Element", values_to = "Concentration")
+```
+
+---
+
+```{r}
+#| label: Fig_Histograms_By_Element_Log
+#| fig-height: 6
+#| fig-width: 9
+
+ggplot(whisky.long.log, aes(x = Concentration)) +
+  geom_histogram(bins = nclass.FD(whisky.long.log$Concentration),
+                 colour = histo.outline, fill = histo.col.2) +
+  facet_wrap(~ Element, scales = "free", ncol = 4) +
+  labs(x = "log Concentration (mg/L)", y = "Frequency") +
+  ggtitle("Histograms - log scale")
+```
+
+---
+
+```{r}
+#| label: Fig_QQ_By_Element_Log
+#| fig-height: 8
+#| fig-width: 12
+
+ggplot(whisky.long.log, aes(sample = Concentration)) +
+  stat_qq(mapping = aes(colour = Descriptor), size = 1) +
+  stat_qq_line() +
+  facet_wrap(~ Element, scales = "free", ncol = 4) +
+  labs(x = "Theoretical Quantile", y = "Sample Quantile") +
+  scale_color_manual(values = descriptor_colours) +
+  theme(legend.position = c(.9, .15))
+```
+
+## Did the transformation help? {.smaller}
+
+::: {.notes}
+1. Does the log transformation improve normality?
+2. Do any variables remain noticeably skewed?
+3. Do the tails continue to present problems?
+:::
+
+. . .
+
+**Yes, log transforming clearly improves normality.**
+
+- A few variables remain slightly skewed, with the more noticeable deviations associated with Island or Counterfeit observations.
+- The only tails that look particularly unusual are those for **Zn**: Island and Counterfeit curve upward on the right, Blend curves downward on the left.
+
+## The Mn's potential bimodality?
+
+** Might drop this section?**
+
+At first glance Mn looked bimodal, with two distinct peaks.
+
+This raised the possibility that the split tracked Counterfeit vs non-Counterfeit.
+
+. . .
+
+Further investigation after taking logarithms, together with the PCA in section (**insert section here**), suggests this is most likely not the case.
+
+There would not be enough Counterfeit observations to create such a distinct peak.
+
+## 7.2 Multivariate normality
+
+```{r}
+#| label: Regular_Mahalanobis
+#| fig-height: 4.6
+
+p <- 11
+
+dM <- mahalanobis(whisky.log[-(1:3)],
+                  center = colMeans(whisky.log[-(1:3)]),
+                  cov = cov(whisky.log[-(1:3)]))
+
+dM <- as.data.frame(dM)
+names(dM) <- c("distance")
+dM$Descriptor <- whisky.data$Descriptor
+dM$Sample_no <- whisky.data$Sample_no
+
+## From https://stackoverflow.com/questions/64950718/in-r-ggplot-how-to-add-labels-to-points-in-a-stat-qq
+myplot <- ggplot(dM, aes(sample = distance)) +
+  stat_qq(mapping = aes(colour = Descriptor), size = 1,
+          distribution = stats::qchisq, dparams = list(df = p)) +
+  scale_colour_manual(values = descriptor_colours) +
+  stat_qq_line(distribution = stats::qchisq, dparams = list(df = p)) +
+  labs(x = "Theoretical quantile", y = "Sample quantile") +
+  ylim(c(3, 27)) # so that the sample number appears correctly
+
+x.pnts <- ggplot_build(myplot)$data[[1]]$x
+y.pnts <- ggplot_build(myplot)$data[[1]]$y
+offset <- (max(y.pnts) - min(y.pnts)) / 20
+
+myplot +
+  geom_text(label = dM$Sample_no,
+            x = x.pnts,
+            y = y.pnts + offset,
+            alpha = .6)
+```
+
+Squared Mahalanobis distances against $\chi^2_{11}$.
+
+## Reading that plot
+
+- Most observations closely follow the reference line across the graph, without substantial deviation or curvature.
+- Four of the five Counterfeit observations stand out strongly.
+
+## Anderson–Darling test {.smaller}
+
+```{r}
+#| label: AD_Test
+#| echo: true
+
+ad_test <- AD.test(whisky.log[-(1:3)])
+ad_test
+```
+
+. . .
+
+Test statistic $0.287$, p-value $0.956$ - the null hypothesis of multivariate normality is not rejected.
+
+## 7.3 Conclusion
+
+After log-transforming, multivariate normality is approximately reasonable but imperfect.
+
+- The Anderson–Darling test supports not rejecting multivariate normality.
+- Individual Q-Q plots and histograms generally look good after transformation.
+- The Mahalanobis-distance Q-Q plot shows close agreement with the reference distribution.
+
+. . .
+
+But there is evidence the Counterfeit samples might come from a different distribution.
+
+# 8. Surprising Observations
+
+Are there surprising observations?
+
+## 8.1 Mahalanobis distance
+
+```{r}
+#| label: Plotting_Mahalanobis_Againt_Chi_Squared
+#| fig-height: 4.4
+
+upper.quantiles <- qchisq(c(.9, .95, .99), df = p)
+density.at.quantiles <- dchisq(x = upper.quantiles, df = p)
+cut.points <- data.frame(upper.quantiles, density.at.quantiles)
+
+ggplot(dM, aes(x = distance)) +
+  geom_histogram(aes(y = after_stat(density)), bins = 10,
+                 col = histo.outline, fill = "lightgray") +
+  geom_rug() +
+  stat_function(fun = dchisq, args = list(df = p),
+                col = "blue", linewidth = 2, alpha = .9, xlim = c(-5, 40)) +
+  geom_segment(data = cut.points,
+               aes(x = upper.quantiles, xend = upper.quantiles,
+                   y = rep(0, 3), yend = density.at.quantiles),
+               col = "green", linewidth = 2) +
+  xlab("Mahalanobis distances and cut points") +
+  ylab("Histogram and density")
+```
+
+Cutoffs at the 90th, 95th and 99th percentiles.
+
+## Only one observation clears the cutoff
+
+The only observation above the 99th-percentile cutoff is sample 20.
+
+None of the others is even above the 95th percentile, but it is still worth looking at the eight largest distances to see where the potentially unusual observations lie.
+
+## Eight largest distances {.smaller}
+
+```{r}
+#| label: Tbl_Md
+
+outliers <- dM |>
+  slice_max(distance, n = 8, with_ties = TRUE)
+
+outliers.joined <- inner_join(whisky.data, outliers)
+
+pander(
+  outliers.joined |>
+    arrange(desc(distance)) |>
+    dplyr::select(Sample_no, Distillery, Descriptor, distance)
+)
+```
+<!-- 
+
+## Mahalanobis–Minimum Covariance Determinant {.smaller}
+
+@LEYS2018150 argue the standard calculation is not robust, because it uses the sample mean and covariance matrix.
+
+They propose an approach based on the Minimum Covariance Determinant (MCD), in this context, the MMCD.
+
+The MCD estimates the center and covariance using a subset of observations chosen to give a robust estimate, reducing the influence potential outliers have on those estimates.
+
+## The MMCD criterion
+
+$$
+\sqrt{(X_i-\widehat\mu_{MCD})^T(\widehat\Sigma_{MCD})^{-1}(X_i-\widehat\mu_{MCD})}>c_k,
+\quad c_k=\sqrt{\chi_{k;1-\alpha}^2}
+$$
+
+where $c_k$ is the cutoff point and $1-\alpha$ determines the tail probability.
+
+. . .
+
+@LEYS2018150 give two variants, MCD50 and MCD75, which is the proportion of observations used in the robust estimation. They suggest MCD75 when there is no reason to suspect more than 25% outliers, particularly for smaller samples.
+
+## MMCD distances
+
+```{r}
+#| label: Plotting_MMCD_Againt_Chi_Squared
+#| fig-height: 4.4
+
+output75 <- cov.mcd(whisky.log[-(1:3)],
+                    quantile.used = nrow(whisky.log[-(1:3)]) * .75)
+mhmcd75 <- mahalanobis(whisky.log[-(1:3)], output75$center, output75$cov)
+
+mhmcd75 <- as.data.frame(mhmcd75)
+names(mhmcd75) <- c("distance")
+mhmcd75$Descriptor <- whisky.data$Descriptor
+mhmcd75$Sample_no <- whisky.data$Sample_no
+
+# cutoff
+alpha <- .01
+
+upper.quantiles <- qchisq(c(1 - alpha), df = p)
+density.at.quantiles <- dchisq(x = upper.quantiles, df = p)
+cut.points <- data.frame(upper.quantiles, density.at.quantiles)
+
+ggplot(mhmcd75, aes(x = distance)) +
+  geom_histogram(aes(y = after_stat(density)), bins = nclass.FD(mhmcd75$distance),
+                 col = histo.outline, fill = "lightgray") +
+  geom_rug() +
+  stat_function(fun = dchisq, args = list(df = p),
+                col = "blue", linewidth = 1, alpha = .9, xlim = c(-5, 40)) +
+  geom_segment(data = cut.points,
+               aes(x = upper.quantiles, xend = upper.quantiles,
+                   y = rep(0, 1), yend = density.at.quantiles),
+               col = "red", linewidth = 1) +
+  xlab(TeX("MMCD distances and cutpoint at $\\alpha=.01$")) +
+  ylab("Histogram and density")
+```
+
+## MMCD outliers {.smaller}
+
+Clear separation between the Counterfeit observations and the rest, but grouped with them are one Grain, one Island and one Speyside sample.
+
+```{r}
+#| label: Tbl_MMCD_Outliers
+
+outliers <- mhmcd75 |> filter(distance > upper.quantiles[1])
+outliers.joined <- whisky.data |> filter(Sample_no %in% outliers$Sample_no)
+outliers.joined$MMCD_distance <- outliers$distance
+
+pander(
+  outliers.joined |>
+    arrange(desc(MMCD_distance)) |>
+    dplyr::select(Sample_no, Distillery, Descriptor, MMCD_distance)
+)
+```
+
+## Why MRCD? {.smaller}
+
+@Hubert_2017 notes that to avoid excessive noise it is recommended that $n > 5p$, at least five observations per dimension. When that fails, MRCD can be used instead.
+
+@Boudt_2019 states that $h = \lceil 0.75n\rceil$ is typically used to obtain better efficiency, consistent with the 75% setting used here.
+
+**Maybe drop this?**
+
+```{r}
+#| label: Calculate_MCD_Excluded_Observations
+#| echo: true
+
+32 - (32 * .75)
+```
+
+## MRCD distances
+
+```{r}
+#| label: Plotting_MMRCD_Againt_Chi_Squared
+#| fig-height: 4.4
+
+out <- CovMrcd(whisky.log[-(1:3)], alpha = .75)
+mrxdmb <- mahalanobis(whisky.log[-(1:3)], out$center, out$cov)
+
+mrxdmb <- as.data.frame(mrxdmb)
+names(mrxdmb) <- c("distance")
+mrxdmb$Descriptor <- whisky.data$Descriptor
+mrxdmb$Sample_no <- whisky.data$Sample_no
+
+# cutoff
+alpha <- .01
+
+upper.quantiles <- qchisq(c(1 - alpha, .95), df = p)
+density.at.quantiles <- dchisq(x = upper.quantiles, df = p)
+cut.points <- data.frame(upper.quantiles, density.at.quantiles)
+
+ggplot(mrxdmb, aes(x = distance)) +
+  geom_histogram(aes(y = after_stat(density)), bins = nclass.FD(mrxdmb$distance),
+                 col = histo.outline, fill = "lightgray") +
+  geom_rug() +
+  stat_function(fun = dchisq, args = list(df = p),
+                col = "blue", linewidth = 1, alpha = .9, xlim = c(-5, 40)) +
+  geom_segment(data = cut.points,
+               aes(x = upper.quantiles, xend = upper.quantiles,
+                   y = rep(0, 2), yend = density.at.quantiles),
+               col = "red", linewidth = 1) +
+  xlab(TeX("MRCD distances and cutpoints at $\\alpha=.01$ and $\\alpha=.05$")) +
+  ylab("Histogram and density")
+```
+
+## MRCD outliers, $\alpha = 0.01$ {.smaller}
+
+```{r}
+#| label: Tbl_MMRCD_Outliers
+
+outliers <- mrxdmb |> filter(distance > upper.quantiles[1])
+outliers.joined <- whisky.data |> filter(Sample_no %in% outliers$Sample_no)
+outliers.joined$MMRCD_distance <- outliers$distance
+
+pander(
+  outliers.joined |>
+    arrange(desc(MMRCD_distance)) |>
+    dplyr::select(Sample_no, Distillery, Descriptor, MMRCD_distance)
+)
+```
+
+## Lowering the cutoff to 95% {.smaller}
+
+Sample 19, a Counterfeit observation also identified in the MMCD section, appears again.
+
+```{r}
+#| label: Tbl_MMRCD_Outliers_2
+
+outliers <- mrxdmb |>
+  filter(distance > upper.quantiles[2]) |>
+  filter(distance < upper.quantiles[1])
+outliers.joined <- inner_join(whisky.data, outliers)
+outliers.joined <- rename(outliers.joined, MMRCD_distance = distance)
+
+pander(
+  outliers.joined |>
+    arrange(desc(MMRCD_distance)) |>
+    dplyr::select(Sample_no, Distillery, Descriptor, MMRCD_distance)
+)
+```
+
+## Comparing the three estimates {.smaller}
+
+- Across all three methods, the Counterfeit observations have the greatest distance values.
+- The regular Mahalanobis distance, using the sample mean and covariance, has only one observation above the 99th percentile.
+- With the MCD and MRCD estimators, the separation between Counterfeit and the rest is much larger and more pronounced - this also introduced the 3 non-counterfeit observations above the 95th percentile.
+
+. . .
+
+**Interpretation:** the Grain sample does not appear as an outlier under the regular calculation because of its similarity to the Counterfeit observations. The Counterfeit observations may be masking potential outliers by influencing the estimated mean and covariance.
+
+## 8.2 Investigating unusual samples
+
+Given how far the Counterfeit observations sit from the MCD-estimated center, there is enough evidence to call them outliers relative to this distribution.
+
+The more interesting question is the non-Counterfeit samples, e.g., sample 15, a Grain whisky, with a distance of 199.
+
+## Sample 15 - Grain, unmatured {.smaller}
+
+:::: {.columns}
+
+::: {.column width="45%"}
+| Element | Concentration |
+|---|---:|
+| P | 0.042 |
+| S | 5.53 |
+| Cl | 0.113 |
+| K | 3.25 |
+| Ca | 1.35 |
+| Mn | 0.012 |
+| Fe | 0.076 |
+| Cu | 0.164 |
+| Zn | 0.046 |
+| Br | 0.01 |
+| Rb | 0.003 |
+:::
+
+::: {.column width="55%"}
+The only value that immediately looks particularly high or low is **Rb**.
+
+Yet this sample has a distance roughly four times greater than sample 20.
+:::
+
+::::
+
+## Sample 20 - Island, Bunnahabhain {.smaller}
+
+:::: {.columns}
+
+::: {.column width="55%"}
+| Element | Concentration | Comment |
+|---|---:|---|
+| P | 2.24 | Rather high |
+| S | 7.54 | |
+| Cl | 1.35 | Rather high |
+| K | 36.2 | Rather high |
+| Ca | 2.12 | Slightly to the right |
+| Mn | 0.051 | |
+| Fe | 0.184 | Slightly to the right |
+| Cu | 0.58 | |
+| Zn | 0.057 | Slightly to the right |
+| Br | 0.014 | |
+| Rb | 0.037 | Rather high |
+:::
+
+::: {.column width="45%"}
+Comparing against the histograms explains the large distance: **P**, **S** and **Rb** lie in the tails, while **Ca**, **Fe** and **Zn** sit well to the right of the main mass.
+:::
+
+::::
+
+## The multivariate point
+
+Sample 15 has a distance roughly four times greater than sample 20, yet shows no immediately discernible oddities in the univariate histograms.
+
+. . .
+
+An observation does not need to be extreme on any single variable to be unusual when the variables are considered jointly.
+
+This is also reflected in the PCA, where sample 15 clearly moves into the Counterfeit cluster.
+
+## Sample 29 - Speyside, Glenfiddich {.smaller}
+
+:::: {.columns}
+
+::: {.column width="55%"}
+| Element | Concentration | Comment |
+|---|---:|---|
+| P | 0.317 | |
+| S | 2.72 | |
+| Cl | 0.344 | |
+| K | 12.4 | |
+| Ca | 0.66 | |
+| Mn | 0.029 | Slightly to the right |
+| Fe | 0.132 | |
+| Cu | 0.519 | |
+| Zn | 0.193 | Outer tail to the right |
+| Br | 0.004 | |
+| Rb | 0.013 | |
+:::
+
+::: {.column width="45%"}
+Similar to the Grain outlier, sample 29 does not look particularly unusual when the variables are considered individually.
+:::
+
+::::
+
+-->
+## 8.3 An important distinction
+
+Keep in mind:
+> A sample can be different from the majority without necessarily being a statistical outlier.
+
+The original paper reported no outliers according to its Mahalanobis distance analysis [@SHAND201714].
+
+## Closing Thoughts {.smaller}
+
+Single grain whisky can essentially be seen as any spirit from one distillery which qualifies as whisky but does not qualify as malt whisky
+
+- How distant the Counterfeit observations are under the robust estimators suggests they may come from a different underlying distribution. The PCA in (**insert section**) strengthens this, but further analysis is needed before concluding.
+- Because sample 15 (Grain) has such a high distance, one of the two Grain observations must be an extreme observation from its own distribution.
+- The Speyside and Island observations are not nearly as extreme. There is not enough information to conclude much beyond calling them very unusual.
+
+## References
+
+::: {#refs}
+:::
