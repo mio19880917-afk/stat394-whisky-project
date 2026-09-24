@@ -2,7 +2,6 @@
 title: "Normal/Mahalanobis and Outliers"
 subtitle: "Multivariate normality and outlier detection in whisky trace elements"
 author: "chloe"
-date: today
 format:
   revealjs:
     theme: default
@@ -339,7 +338,7 @@ ad_test
 
 Test statistic $0.287$, p-value $0.956$ - the null hypothesis of multivariate normality is not rejected.
 
-## 7.3 Conclusion
+## 7.3 Conclusion {.smaller}
 
 After log-transforming, multivariate normality is approximately reasonable but imperfect.
 
@@ -381,7 +380,7 @@ ggplot(dM, aes(x = distance)) +
 
 Cutoffs at the 90th, 95th and 99th percentiles.
 
-## Only one observation clears the cutoff
+## 99th Percentile Cutoff
 
 The only observation above the 99th-percentile cutoff is sample 20.
 
@@ -403,6 +402,60 @@ pander(
     dplyr::select(Sample_no, Distillery, Descriptor, distance)
 )
 ```
+
+## Closer look at sample 12 {.smaller}
+
+```{r}
+#| include: false
+
+pander(scale(whisky.log[-(1:3)])[12,])
+```
+
+:::: {.columns}
+
+::: {.column width="45%"}
+| Element | Concentration |
+|---|---:|
+| P | 0.387 |
+| S | 1.90 |
+| Cl | 1.46 |
+| K | -0.890 |
+| Ca | 1.09 |
+| Mn | -1.38 |
+| Fe | -2.02 |
+| Cu | -2.17 |
+| Zn | 0.790 |
+| Br | 3.14 |
+| Rb | -1.97 |
+:::
+
+::: {.column width="55%"}
+
+The concentrations is the standardized log scale.
+
+The only element with a specifically large value is **Br**, being greater than 3 stds above the sample mean.
+
+:::
+
+::::
+
+## Comparing Sample 12 {.smaller}
+
+```{r}
+whisky.stand <- as.data.frame(scale(whisky.log[-(1:3)]))
+whisky.stand$Sample_no <- whisky.log$Sample_no
+whisky.stand$Descriptor <- whisky.log$Descriptor
+
+pander(as.data.frame(subset(whisky.stand, Descriptor=="Counterfeit")) |>
+  dplyr::select(P, S, Cl, K, Ca, Mn, Fe, Cu, Zn, Br, Rb))
+```
+
+Sample 12 has an unusual combination of trace element concentrations. It's Cl is higher than the others (in addition to the high Br), and low Fe, Cu and Rb concentrations.
+
+---
+
+What this shows is that even if a sample can look fairly normal on each element, it can still have an unusual overall combination of element concentrations. For this reason, sample 12 is better described as an unusual observation than as an error that should be removed
+
 <!-- 
 
 ## Mahalanobis–Minimum Covariance Determinant {.smaller}
@@ -676,17 +729,15 @@ Similar to the Grain outlier, sample 29 does not look particularly unusual when 
 ## 8.3 An important distinction
 
 Keep in mind:
+
 > A sample can be different from the majority without necessarily being a statistical outlier.
 
 The original paper reported no outliers according to its Mahalanobis distance analysis [@SHAND201714].
 
 ## Closing Thoughts {.smaller}
 
-Single grain whisky can essentially be seen as any spirit from one distillery which qualifies as whisky but does not qualify as malt whisky
+How distant the Counterfeit observations are under the robust estimators suggests they may come from a different underlying distribution. The PCA strengthens this, but further analysis is needed before concluding.
 
-- How distant the Counterfeit observations are under the robust estimators suggests they may come from a different underlying distribution. The PCA in (**insert section**) strengthens this, but further analysis is needed before concluding.
-- Because sample 15 (Grain) has such a high distance, one of the two Grain observations must be an extreme observation from its own distribution.
-- The Speyside and Island observations are not nearly as extreme. There is not enough information to conclude much beyond calling them very unusual.
 
 ## References
 
